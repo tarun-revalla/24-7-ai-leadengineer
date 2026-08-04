@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -48,11 +49,11 @@ func TestManagerStage(t *testing.T) {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	if err := m.Stage(nil, []string{"test.txt"}); err != nil {
+	if err := m.Stage(context.Background(), []string{"test.txt"}); err != nil {
 		t.Fatalf("Stage failed: %v", err)
 	}
 
-	status, _ := m.Status(nil)
+	status, _ := m.Status(context.Background())
 	if len(status.StagedChanges) == 0 || status.StagedChanges[0] != "test.txt" {
 		t.Error("File not staged correctly")
 	}
@@ -62,7 +63,7 @@ func TestManagerStageEmpty(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	err := m.Stage(nil, []string{})
+	err := m.Stage(context.Background(), []string{})
 	if err == nil {
 		t.Fatal("Stage should fail with empty paths")
 	}
@@ -75,9 +76,9 @@ func TestManagerCommit(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test"), 0644)
 
-	m.Stage(nil, []string{"test.txt"})
+	m.Stage(context.Background(), []string{"test.txt"})
 
-	hash, err := m.Commit(nil, "Test commit")
+	hash, err := m.Commit(context.Background(), "Test commit")
 	if err != nil {
 		t.Fatalf("Commit failed: %v", err)
 	}
@@ -91,7 +92,7 @@ func TestManagerCommitEmpty(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	_, err := m.Commit(nil, "")
+	_, err := m.Commit(context.Background(), "")
 	if err == nil {
 		t.Fatal("Commit should fail with empty message")
 	}
@@ -101,7 +102,7 @@ func TestManagerStatus(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	status, err := m.Status(nil)
+	status, err := m.Status(context.Background())
 	if err != nil {
 		t.Fatalf("Status failed: %v", err)
 	}
@@ -122,7 +123,7 @@ func TestManagerStatusWithChanges(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "new.txt")
 	os.WriteFile(testFile, []byte("new content"), 0644)
 
-	status, _ := m.Status(nil)
+	status, _ := m.Status(context.Background())
 	if status.IsClean != false {
 		t.Error("Status should not be clean with untracked files")
 	}
@@ -136,7 +137,7 @@ func TestManagerGetLastCommit(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	commit, err := m.GetLastCommit(nil)
+	commit, err := m.GetLastCommit(context.Background())
 	if err != nil {
 		t.Fatalf("GetLastCommit failed: %v", err)
 	}
@@ -158,7 +159,7 @@ func TestManagerGetCommitHistory(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	commits, err := m.GetCommitHistory(nil, 5)
+	commits, err := m.GetCommitHistory(context.Background(), 5)
 	if err != nil {
 		t.Fatalf("GetCommitHistory failed: %v", err)
 	}
@@ -176,7 +177,7 @@ func TestManagerHasConflicts(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	hasConflicts, err := m.HasConflicts(nil)
+	hasConflicts, err := m.HasConflicts(context.Background())
 	if err != nil {
 		t.Fatalf("HasConflicts failed: %v", err)
 	}
@@ -190,7 +191,7 @@ func TestManagerGetConflictedFiles(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	files, err := m.GetConflictedFiles(nil)
+	files, err := m.GetConflictedFiles(context.Background())
 	if err != nil {
 		t.Fatalf("GetConflictedFiles failed: %v", err)
 	}
@@ -204,7 +205,7 @@ func TestManagerResolveConflictManual(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	err := m.ResolveConflict(nil, interfaces.ConflictStrategyManual)
+	err := m.ResolveConflict(context.Background(), interfaces.ConflictStrategyManual)
 	if err == nil {
 		t.Fatal("Manual strategy should return error")
 	}
@@ -229,8 +230,8 @@ func TestManagerConcurrency(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		go func() {
-			_, _ = m.Status(nil)
-			_, _ = m.GetLastCommit(nil)
+			_, _ = m.Status(context.Background())
+			_, _ = m.GetLastCommit(context.Background())
 			done <- true
 		}()
 	}
@@ -244,7 +245,7 @@ func TestManagerResolveConflictInvalid(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	err := m.ResolveConflict(nil, interfaces.ConflictStrategy("invalid"))
+	err := m.ResolveConflict(context.Background(), interfaces.ConflictStrategy("invalid"))
 	if err == nil {
 		t.Fatal("Should fail with invalid strategy")
 	}
@@ -254,7 +255,7 @@ func TestManagerExecGit(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	output, err := m.execGit("log", "-1", "--format=%s")
+	output, err := m.execGit(context.Background(), "log", "-1", "--format=%s")
 	if err != nil {
 		t.Fatalf("execGit failed: %v", err)
 	}
@@ -268,7 +269,7 @@ func TestManagerCheckConflicts(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	hasConflicts, err := m.checkConflicts()
+	hasConflicts, err := m.checkConflicts(context.Background())
 	if err != nil {
 		t.Fatalf("checkConflicts failed: %v", err)
 	}
@@ -293,7 +294,7 @@ func TestManagerGetCommitHistoryDefault(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	commits, err := m.GetCommitHistory(nil, 0)
+	commits, err := m.GetCommitHistory(context.Background(), 0)
 	if err != nil {
 		t.Fatalf("GetCommitHistory failed: %v", err)
 	}
@@ -307,7 +308,7 @@ func TestManagerStatusAllFields(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	status, err := m.Status(nil)
+	status, err := m.Status(context.Background())
 	if err != nil {
 		t.Fatalf("Status failed: %v", err)
 	}
@@ -329,7 +330,7 @@ func TestManagerPullNoRemote(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	err := m.Pull(nil, "main")
+	err := m.Pull(context.Background(), "main")
 	if err == nil {
 		t.Fatal("Pull should fail without remote")
 	}
@@ -339,7 +340,7 @@ func TestManagerPullDefaultBranch(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 	m := New(tmpDir, "Test User", "test@example.com", true, 3)
 
-	err := m.Pull(nil, "")
+	err := m.Pull(context.Background(), "")
 	if err == nil {
 		t.Fatal("Pull should fail without remote")
 	}
@@ -352,8 +353,8 @@ func TestManagerCommitWithSignature(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "file.txt")
 	os.WriteFile(testFile, []byte("content"), 0644)
 
-	m.Stage(nil, []string{"file.txt"})
-	hash, err := m.Commit(nil, "Commit with custom signature")
+	m.Stage(context.Background(), []string{"file.txt"})
+	hash, err := m.Commit(context.Background(), "Commit with custom signature")
 
 	if err != nil {
 		t.Fatalf("Commit failed: %v", err)
@@ -363,7 +364,7 @@ func TestManagerCommitWithSignature(t *testing.T) {
 		t.Error("Commit hash should not be empty")
 	}
 
-	commit, _ := m.GetLastCommit(nil)
+	commit, _ := m.GetLastCommit(context.Background())
 	if commit.Author != "Custom Author" {
 		t.Errorf("Author: got %s, want Custom Author", commit.Author)
 	}
@@ -376,11 +377,11 @@ func TestManagerMultipleCommits(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		f := filepath.Join(tmpDir, fmt.Sprintf("file%d.txt", i))
 		os.WriteFile(f, []byte(fmt.Sprintf("content %d", i)), 0644)
-		m.Stage(nil, []string{fmt.Sprintf("file%d.txt", i)})
-		m.Commit(nil, fmt.Sprintf("Commit %d", i))
+		m.Stage(context.Background(), []string{fmt.Sprintf("file%d.txt", i)})
+		m.Commit(context.Background(), fmt.Sprintf("Commit %d", i))
 	}
 
-	commits, _ := m.GetCommitHistory(nil, 10)
+	commits, _ := m.GetCommitHistory(context.Background(), 10)
 	if len(commits) < 3 {
 		t.Errorf("Should have at least 3 commits, got %d", len(commits))
 	}

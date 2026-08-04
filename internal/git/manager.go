@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -9,6 +10,9 @@ import (
 
 	"github.com/tarun-revalla/24-7-ai-leadengineer/pkg/interfaces"
 )
+
+// Manager must satisfy the contract the rest of the system depends on.
+var _ interfaces.GitManager = (*Manager)(nil)
 
 // Manager manages git operations.
 type Manager struct {
@@ -34,7 +38,7 @@ func New(projectPath, committerName, committerEmail string, autoRetry bool, retr
 }
 
 // Stage stages files for commit.
-func (m *Manager) Stage(ctx interface{}, paths []string) error {
+func (m *Manager) Stage(ctx context.Context, paths []string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -43,7 +47,7 @@ func (m *Manager) Stage(ctx interface{}, paths []string) error {
 	}
 
 	args := append([]string{"add"}, paths...)
-	cmd := exec.Command("git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = m.projectPath
 
 	if err := cmd.Run(); err != nil {
@@ -54,7 +58,7 @@ func (m *Manager) Stage(ctx interface{}, paths []string) error {
 }
 
 // Commit commits staged changes.
-func (m *Manager) Commit(ctx interface{}, message string) (string, error) {
+func (m *Manager) Commit(ctx context.Context, message string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -62,7 +66,7 @@ func (m *Manager) Commit(ctx interface{}, message string) (string, error) {
 		return "", fmt.Errorf("commit message cannot be empty")
 	}
 
-	cmd := exec.Command("git", "-c", fmt.Sprintf("user.name=%s", m.committerName),
+	cmd := exec.CommandContext(ctx, "git", "-c", fmt.Sprintf("user.name=%s", m.committerName),
 		"-c", fmt.Sprintf("user.email=%s", m.committerEmail),
 		"commit", "-m", message)
 	cmd.Dir = m.projectPath
@@ -77,7 +81,7 @@ func (m *Manager) Commit(ctx interface{}, message string) (string, error) {
 }
 
 // Push pushes commits to remote.
-func (m *Manager) Push(ctx interface{}, branch string) error {
+func (m *Manager) Push(ctx context.Context, branch string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -85,7 +89,7 @@ func (m *Manager) Push(ctx interface{}, branch string) error {
 		branch = "main"
 	}
 
-	cmd := exec.Command("git", "push", "origin", branch)
+	cmd := exec.CommandContext(ctx, "git", "push", "origin", branch)
 	cmd.Dir = m.projectPath
 
 	if err := cmd.Run(); err != nil {
@@ -93,14 +97,14 @@ func (m *Manager) Push(ctx interface{}, branch string) error {
 			return fmt.Errorf("failed to push: %w", err)
 		}
 
-		return m.retryPush(branch)
+		return m.retryPush(ctx, branch)
 	}
 
 	return nil
 }
 
 // Pull pulls latest changes.
-func (m *Manager) Pull(ctx interface{}, branch string) error {
+func (m *Manager) Pull(ctx context.Context, branch string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -108,7 +112,7 @@ func (m *Manager) Pull(ctx interface{}, branch string) error {
 		branch = "main"
 	}
 
-	cmd := exec.Command("git", "pull", "origin", branch)
+	cmd := exec.CommandContext(ctx, "git", "pull", "origin", branch)
 	cmd.Dir = m.projectPath
 
 	if err := cmd.Run(); err != nil {
@@ -119,76 +123,108 @@ func (m *Manager) Pull(ctx interface{}, branch string) error {
 }
 
 // Status returns current git status.
-func (m *Manager) Status(ctx interface{}) (*interfaces.GitStatus, error) {
+func (m *Manager) Status(ctx context.Context) (*interfaces.GitStatus, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	// Every command below is checked. A discarded error here would be reported
+	// as an empty result, which reads as "clean tree, no changes" — the system
+	// would then believe there is nothing to commit when git in fact failed.
 	status := &interfaces.GitStatus{}
 
-	// Get current branch
-	branch, _ := m.execGit("rev-parse", "--abbrev-ref", "HEAD")
+	branch, err := m.execGit(ctx, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine current branch: %w", err)
+	}
 	status.Branch = strings.TrimSpace(branch)
 
-	// Check if clean
-	clean, _ := m.execGit("status", "--porcelain")
-	status.IsClean = clean == ""
-
-	// Get staged changes
-	staged, _ := m.execGit("diff", "--cached", "--name-only")
-	status.StagedChanges = strings.Split(strings.TrimSpace(staged), "\n")
-	if status.StagedChanges[0] == "" {
-		status.StagedChanges = nil
+	porcelain, err := m.execGit(ctx, "status", "--porcelain")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read repository status: %w", err)
 	}
+	status.IsClean = strings.TrimSpace(porcelain) == ""
 
-	// Get unstaged changes
-	unstaged, _ := m.execGit("diff", "--name-only")
-	status.UnstagedChanges = strings.Split(strings.TrimSpace(unstaged), "\n")
-	if status.UnstagedChanges[0] == "" {
-		status.UnstagedChanges = nil
+	staged, err := m.execGit(ctx, "diff", "--cached", "--name-only")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list staged changes: %w", err)
 	}
+	status.StagedChanges = splitLines(staged)
 
-	// Get untracked files
-	untracked, _ := m.execGit("ls-files", "--others", "--exclude-standard")
-	status.UntrackedFiles = strings.Split(strings.TrimSpace(untracked), "\n")
-	if status.UntrackedFiles[0] == "" {
-		status.UntrackedFiles = nil
+	unstaged, err := m.execGit(ctx, "diff", "--name-only")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list unstaged changes: %w", err)
 	}
+	status.UnstagedChanges = splitLines(unstaged)
 
-	// Check for conflicts
-	status.HasConflicts, _ = m.checkConflicts()
+	untracked, err := m.execGit(ctx, "ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list untracked files: %w", err)
+	}
+	status.UntrackedFiles = splitLines(untracked)
+
+	status.HasConflicts, err = m.checkConflicts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check for conflicts: %w", err)
+	}
 
 	return status, nil
 }
 
+// splitLines turns command output into a slice, returning nil rather than a
+// one-element slice containing "" when the output is empty.
+func splitLines(out string) []string {
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "\n")
+}
+
 // GetLastCommit returns the latest commit.
-func (m *Manager) GetLastCommit(ctx interface{}) (*interfaces.GitCommit, error) {
+func (m *Manager) GetLastCommit(ctx context.Context) (*interfaces.GitCommit, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	hash, _ := m.execGit("rev-parse", "HEAD")
-	hash = strings.TrimSpace(hash)
+	// A single log call keeps the fields consistent with one another; four
+	// separate calls could straddle a concurrent commit and mix two commits.
+	out, err := m.execGit(ctx, "log", "-1", "--format=%H|%an|%s|%aI", "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read last commit: %w", err)
+	}
 
-	author, _ := m.execGit("log", "-1", "--format=%an", "HEAD")
-	author = strings.TrimSpace(author)
+	commit, ok := parseCommitLine(strings.TrimSpace(out))
+	if !ok {
+		return nil, fmt.Errorf("unexpected git log output: %q", strings.TrimSpace(out))
+	}
 
-	message, _ := m.execGit("log", "-1", "--format=%s", "HEAD")
-	message = strings.TrimSpace(message)
+	return &commit, nil
+}
 
-	timestamp, _ := m.execGit("log", "-1", "--format=%aI", "HEAD")
-	timestamp = strings.TrimSpace(timestamp)
+// parseCommitLine parses one hash|author|subject|date record. The subject may
+// itself contain the separator, so the split is bounded and the subject is
+// reassembled from the middle fields.
+func parseCommitLine(line string) (interfaces.GitCommit, bool) {
+	if line == "" {
+		return interfaces.GitCommit{}, false
+	}
 
-	t, _ := time.Parse(time.RFC3339, timestamp)
+	parts := strings.Split(line, "|")
+	if len(parts) < 4 {
+		return interfaces.GitCommit{}, false
+	}
 
-	return &interfaces.GitCommit{
-		Hash:      hash,
-		Author:    author,
-		Message:   message,
+	t, _ := time.Parse(time.RFC3339, parts[len(parts)-1])
+
+	return interfaces.GitCommit{
+		Hash:      parts[0],
+		Author:    parts[1],
+		Message:   strings.Join(parts[2:len(parts)-1], "|"),
 		Timestamp: t,
-	}, nil
+	}, true
 }
 
 // GetCommitHistory returns recent commits.
-func (m *Manager) GetCommitHistory(ctx interface{}, limit int) ([]interfaces.GitCommit, error) {
+func (m *Manager) GetCommitHistory(ctx context.Context, limit int) ([]interfaces.GitCommit, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -196,59 +232,46 @@ func (m *Manager) GetCommitHistory(ctx interface{}, limit int) ([]interfaces.Git
 		limit = 10
 	}
 
-	output, err := m.execGit("log", fmt.Sprintf("--max-count=%d", limit), "--format=%H|%an|%s|%aI")
+	output, err := m.execGit(ctx, "log", fmt.Sprintf("--max-count=%d", limit), "--format=%H|%an|%s|%aI")
 	if err != nil {
 		return nil, err
 	}
 
-	lines := strings.Split(strings.TrimSpace(output), "\n")
+	lines := splitLines(output)
 	commits := make([]interfaces.GitCommit, 0, len(lines))
 
 	for _, line := range lines {
-		if line == "" {
-			continue
+		if commit, ok := parseCommitLine(line); ok {
+			commits = append(commits, commit)
 		}
-
-		parts := strings.Split(line, "|")
-		if len(parts) < 4 {
-			continue
-		}
-
-		t, _ := time.Parse(time.RFC3339, parts[3])
-		commits = append(commits, interfaces.GitCommit{
-			Hash:      parts[0],
-			Author:    parts[1],
-			Message:   parts[2],
-			Timestamp: t,
-		})
 	}
 
 	return commits, nil
 }
 
 // HasConflicts checks if there are merge conflicts.
-func (m *Manager) HasConflicts(ctx interface{}) (bool, error) {
+func (m *Manager) HasConflicts(ctx context.Context) (bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	return m.checkConflicts()
+	return m.checkConflicts(ctx)
 }
 
 // ResolveConflict resolves conflicts using specified strategy.
-func (m *Manager) ResolveConflict(ctx interface{}, strategy interfaces.ConflictStrategy) error {
+func (m *Manager) ResolveConflict(ctx context.Context, strategy interfaces.ConflictStrategy) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	switch strategy {
 	case interfaces.ConflictStrategyOurs:
-		cmd := exec.Command("git", "checkout", "--ours", ".")
+		cmd := exec.CommandContext(ctx, "git", "checkout", "--ours", ".")
 		cmd.Dir = m.projectPath
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to resolve conflict (ours): %w", err)
 		}
 
 	case interfaces.ConflictStrategyTheirs:
-		cmd := exec.Command("git", "checkout", "--theirs", ".")
+		cmd := exec.CommandContext(ctx, "git", "checkout", "--theirs", ".")
 		cmd.Dir = m.projectPath
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to resolve conflict (theirs): %w", err)
@@ -265,38 +288,43 @@ func (m *Manager) ResolveConflict(ctx interface{}, strategy interfaces.ConflictS
 }
 
 // GetConflictedFiles returns list of conflicted files.
-func (m *Manager) GetConflictedFiles(ctx interface{}) ([]string, error) {
+func (m *Manager) GetConflictedFiles(ctx context.Context) ([]string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	output, err := m.execGit("diff", "--name-only", "--diff-filter=U")
+	output, err := m.execGit(ctx, "diff", "--name-only", "--diff-filter=U")
 	if err != nil {
 		return nil, err
 	}
 
-	files := strings.Split(strings.TrimSpace(output), "\n")
-	if files[0] == "" {
-		return nil, nil
-	}
-
-	return files, nil
+	return splitLines(output), nil
 }
 
 // Helper methods
 
-func (m *Manager) execGit(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+// execGit runs a git command bound to ctx, so a cancelled or expired context
+// terminates the subprocess rather than leaving it running.
+func (m *Manager) execGit(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = m.projectPath
 
 	output, err := cmd.Output()
 	return string(output), err
 }
 
-func (m *Manager) retryPush(branch string) error {
+// retryPush retries a failed push with exponential backoff, abandoning the
+// attempt as soon as ctx is cancelled rather than sleeping through it.
+func (m *Manager) retryPush(ctx context.Context, branch string) error {
 	for attempt := 1; attempt <= m.retryAttempts; attempt++ {
-		time.Sleep(time.Duration(m.retryBackoffMs*attempt) * time.Millisecond)
+		backoff := time.Duration(m.retryBackoffMs) * time.Millisecond << (attempt - 1)
 
-		cmd := exec.Command("git", "push", "origin", branch)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("push retry abandoned: %w", ctx.Err())
+		case <-time.After(backoff):
+		}
+
+		cmd := exec.CommandContext(ctx, "git", "push", "origin", branch)
 		cmd.Dir = m.projectPath
 
 		if err := cmd.Run(); err == nil {
@@ -307,16 +335,13 @@ func (m *Manager) retryPush(branch string) error {
 	return fmt.Errorf("push failed after %d retries", m.retryAttempts)
 }
 
-func (m *Manager) checkConflicts() (bool, error) {
-	cmd := exec.Command("git", "diff", "--name-only", "--diff-filter=U")
-	cmd.Dir = m.projectPath
-
-	output, err := cmd.Output()
+func (m *Manager) checkConflicts(ctx context.Context) (bool, error) {
+	output, err := m.execGit(ctx, "diff", "--name-only", "--diff-filter=U")
 	if err != nil {
 		return false, err
 	}
 
-	return strings.TrimSpace(string(output)) != "", nil
+	return strings.TrimSpace(output) != "", nil
 }
 
 func (m *Manager) extractCommitHash(output string) string {

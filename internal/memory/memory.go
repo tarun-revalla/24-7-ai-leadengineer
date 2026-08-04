@@ -14,6 +14,9 @@ import (
 
 const aiDir = ".ai"
 
+// Manager must satisfy the contract the rest of the system depends on.
+var _ interfaces.Memory = (*Manager)(nil)
+
 // Manager implements the Memory interface for persistent project state.
 type Manager struct {
 	projectPath string

@@ -16,6 +16,9 @@ import (
 // DefaultBinary is the Claude Code executable invoked when none is configured.
 const DefaultBinary = "claude"
 
+// Manager must satisfy the contract the rest of the system depends on.
+var _ interfaces.ClaudeSessionManager = (*Manager)(nil)
+
 // Manager manages Claude Code sessions.
 type Manager struct {
 	projectPath      string
