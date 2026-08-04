@@ -12,7 +12,7 @@ import (
 func TestNewManager(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	m, err := New(tmpDir, "claude-opus-5", 3, 300)
+	m, err := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestNewManagerDefault(t *testing.T) {
 
 func TestLaunchSession(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	result, err := m.LaunchSession(ctx, "Test prompt")
@@ -63,7 +63,7 @@ func TestLaunchSession(t *testing.T) {
 
 func TestLaunchSessionEmptyPrompt(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	_, err := m.LaunchSession(ctx, "")
@@ -74,7 +74,7 @@ func TestLaunchSessionEmptyPrompt(t *testing.T) {
 
 func TestResumeSession(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	result1, _ := m.LaunchSession(ctx, "First prompt")
@@ -92,7 +92,7 @@ func TestResumeSession(t *testing.T) {
 
 func TestResumeSessionEmpty(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	_, err := m.ResumeSession(ctx, "")
@@ -103,7 +103,7 @@ func TestResumeSessionEmpty(t *testing.T) {
 
 func TestResumeSessionNotFound(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	_, err := m.ResumeSession(ctx, "nonexistent")
@@ -114,7 +114,7 @@ func TestResumeSessionNotFound(t *testing.T) {
 
 func TestEndSession(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	result, _ := m.LaunchSession(ctx, "Prompt")
@@ -128,7 +128,7 @@ func TestEndSession(t *testing.T) {
 
 func TestGetCurrentSessionID(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	if m.GetCurrentSessionID() != "" {
@@ -145,7 +145,7 @@ func TestGetCurrentSessionID(t *testing.T) {
 
 func TestGetSessionStatus(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	result, _ := m.LaunchSession(ctx, "Prompt")
@@ -167,7 +167,7 @@ func TestGetSessionStatus(t *testing.T) {
 
 func TestGetSessionStatusCurrent(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	result, _ := m.LaunchSession(ctx, "Prompt")
@@ -184,7 +184,7 @@ func TestGetSessionStatusCurrent(t *testing.T) {
 
 func TestGetSessionStatusNoSession(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	_, err := m.GetSessionStatus(ctx, "")
@@ -195,7 +195,7 @@ func TestGetSessionStatusNoSession(t *testing.T) {
 
 func TestIsQuotaExhausted(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	m.LaunchSession(ctx, "Prompt")
@@ -212,7 +212,7 @@ func TestIsQuotaExhausted(t *testing.T) {
 
 func TestGetQuotaRemaining(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	m.LaunchSession(ctx, "Prompt")
@@ -229,7 +229,7 @@ func TestGetQuotaRemaining(t *testing.T) {
 
 func TestDetectFailure(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	m.LaunchSession(ctx, "Prompt")
@@ -246,7 +246,7 @@ func TestDetectFailure(t *testing.T) {
 
 func TestRecoverFromFailure(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	m.LaunchSession(ctx, "Prompt")
@@ -259,7 +259,7 @@ func TestRecoverFromFailure(t *testing.T) {
 
 func TestRecoverFromFailureNoSession(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	err := m.RecoverFromFailure(ctx, interfaces.FailureTypeQuota)
@@ -270,7 +270,7 @@ func TestRecoverFromFailureNoSession(t *testing.T) {
 
 func TestConcurrency(t *testing.T) {
 	tmpDir := t.TempDir()
-	m, _ := New(tmpDir, "claude-opus-5", 3, 300)
+	m, _ := New(tmpDir, "claude-opus-5", 3, 300, WithExecutor(newFakeExecutor(okResponse(jsonOK))))
 	ctx := context.Background()
 
 	done := make(chan bool)
@@ -300,26 +300,5 @@ func TestGenerateSessionID(t *testing.T) {
 
 	if id1 == id2 {
 		t.Error("Generated IDs should be unique")
-	}
-}
-
-func TestContains(t *testing.T) {
-	tests := []struct {
-		s      string
-		substr string
-		want   bool
-	}{
-		{"hello", "ell", true},
-		{"hello", "hello", true},
-		{"hello", "xyz", false},
-		{"", "", false},
-		{"hello", "", false},
-	}
-
-	for _, tt := range tests {
-		got := contains(tt.s, tt.substr)
-		if got != tt.want {
-			t.Errorf("contains(%q, %q) = %v, want %v", tt.s, tt.substr, got, tt.want)
-		}
 	}
 }
