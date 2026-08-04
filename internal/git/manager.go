@@ -12,13 +12,13 @@ import (
 
 // Manager manages git operations.
 type Manager struct {
-	projectPath     string
-	committerName   string
-	committerEmail  string
-	autoRetry       bool
-	retryAttempts   int
-	retryBackoffMs  int
-	mu              sync.RWMutex
+	projectPath    string
+	committerName  string
+	committerEmail string
+	autoRetry      bool
+	retryAttempts  int
+	retryBackoffMs int
+	mu             sync.RWMutex
 }
 
 // New creates a new git manager.

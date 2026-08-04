@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/yaml.v3"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/pkg/interfaces"
+	"gopkg.in/yaml.v3"
 )
 
 const aiDir = ".ai"

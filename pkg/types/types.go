@@ -4,10 +4,10 @@ import "time"
 
 // ExecutionContext wraps commonly needed context information.
 type ExecutionContext struct {
-	ProjectPath   string
-	WorkspacePath string
-	ConfigPath    string
-	LogPath       string
+	ProjectPath    string
+	WorkspacePath  string
+	ConfigPath     string
+	LogPath        string
 	CheckpointPath string
 }
 
@@ -27,11 +27,11 @@ const (
 type SystemState string
 
 const (
-	StateRunning   SystemState = "running"
+	StateRunning    SystemState = "running"
 	StateRecovering SystemState = "recovering"
-	StateSleeping  SystemState = "sleeping"
-	StatePaused    SystemState = "paused"
-	StateFailed    SystemState = "failed"
+	StateSleeping   SystemState = "sleeping"
+	StatePaused     SystemState = "paused"
+	StateFailed     SystemState = "failed"
 )
 
 // Priority represents task priority levels.
@@ -62,10 +62,10 @@ const (
 type NotificationLevel string
 
 const (
-	NotificationDebug   NotificationLevel = "debug"
-	NotificationInfo    NotificationLevel = "info"
-	NotificationWarning NotificationLevel = "warning"
-	NotificationError   NotificationLevel = "error"
+	NotificationDebug    NotificationLevel = "debug"
+	NotificationInfo     NotificationLevel = "info"
+	NotificationWarning  NotificationLevel = "warning"
+	NotificationError    NotificationLevel = "error"
 	NotificationCritical NotificationLevel = "critical"
 )
 
@@ -88,24 +88,24 @@ type Error struct {
 
 // Statistics represents execution statistics.
 type Statistics struct {
-	TasksCompleted       int
-	TasksFailed          int
-	AverageTaskDuration  time.Duration
-	TotalExecutionTime   time.Duration
-	QuotaUsed            float64
-	SuccessRate          float64
-	LastTaskTime         time.Time
-	LastCheckpointTime   time.Time
-	RecoveryCount        int
+	TasksCompleted      int
+	TasksFailed         int
+	AverageTaskDuration time.Duration
+	TotalExecutionTime  time.Duration
+	QuotaUsed           float64
+	SuccessRate         float64
+	LastTaskTime        time.Time
+	LastCheckpointTime  time.Time
+	RecoveryCount       int
 }
 
 // HealthCheck represents system health status.
 type HealthCheck struct {
-	Status      string // "healthy", "degraded", "unhealthy"
-	Timestamp   time.Time
-	Components  map[string]ComponentHealth
-	LastError   error
-	Uptime      time.Duration
+	Status     string // "healthy", "degraded", "unhealthy"
+	Timestamp  time.Time
+	Components map[string]ComponentHealth
+	LastError  error
+	Uptime     time.Duration
 }
 
 // ComponentHealth represents health of a subsystem.
@@ -118,26 +118,26 @@ type ComponentHealth struct {
 // ConfigSpec defines configuration structure.
 type ConfigSpec struct {
 	Project struct {
-		Name   string
-		Path   string
-		Type   string // "go", "node", "python", "rust", etc.
+		Name string
+		Path string
+		Type string // "go", "node", "python", "rust", etc.
 	}
 
 	Claude struct {
-		Enabled           bool
-		Model             string
-		MaxRetries        int
-		TimeoutSeconds    int
-		ContextWindowSize int
+		Enabled             bool
+		Model               string
+		MaxRetries          int
+		TimeoutSeconds      int
+		ContextWindowSize   int
 		MaxTokensPerRequest int
 	}
 
 	Quota struct {
-		CheckInterval        time.Duration
-		WarningThreshold     float64
-		ExhaustionThreshold  float64
+		CheckInterval         time.Duration
+		WarningThreshold      float64
+		ExhaustionThreshold   float64
 		AutoSleepOnExhaustion bool
-		SleepDuration        time.Duration
+		SleepDuration         time.Duration
 	}
 
 	Checkpoint struct {
@@ -156,9 +156,9 @@ type ConfigSpec struct {
 	}
 
 	Tasks struct {
-		MaxDuration      time.Duration
-		AutoCheckpoint   bool
-		AutoCommit       bool
+		MaxDuration       time.Duration
+		AutoCheckpoint    bool
+		AutoCommit        bool
 		ParallelExecution bool
 	}
 
@@ -170,10 +170,10 @@ type ConfigSpec struct {
 	}
 
 	Metrics struct {
-		Enabled         bool
-		ExportInterval  time.Duration
-		ExportPath      string
-		PrometheusPort  int
+		Enabled        bool
+		ExportInterval time.Duration
+		ExportPath     string
+		PrometheusPort int
 	}
 
 	Plugins struct {

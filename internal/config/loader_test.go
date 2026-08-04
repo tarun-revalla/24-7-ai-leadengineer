@@ -120,10 +120,10 @@ func TestLoaderValidateProjectType(t *testing.T) {
 
 func TestLoaderValidateClaudeConfig(t *testing.T) {
 	tests := []struct {
-		name        string
-		key         string
-		value       interface{}
-		wantErr     bool
+		name    string
+		key     string
+		value   interface{}
+		wantErr bool
 	}{
 		{"valid maxRetries", "claude.maxRetries", 3, false},
 		{"maxRetries too low", "claude.maxRetries", 0, true},
@@ -150,10 +150,10 @@ func TestLoaderValidateClaudeConfig(t *testing.T) {
 
 func TestLoaderValidateQuotaThresholds(t *testing.T) {
 	tests := []struct {
-		name                 string
-		warningThreshold     float64
-		exhaustionThreshold  float64
-		wantErr              bool
+		name                string
+		warningThreshold    float64
+		exhaustionThreshold float64
+		wantErr             bool
 	}{
 		{"valid", 0.8, 0.95, false},
 		{"warning >= exhaustion", 0.95, 0.95, true},

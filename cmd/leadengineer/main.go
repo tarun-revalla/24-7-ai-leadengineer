@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/cli"
 )
 

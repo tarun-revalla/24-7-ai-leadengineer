@@ -32,14 +32,14 @@ type ProjectAnalyzer interface {
 
 // ProjectAnalysis contains analysis results.
 type ProjectAnalysis struct {
-	Language         string
-	BuildSystem      string
-	RootPath         string
-	SourceDirs       []string
-	TestDirs         []string
-	Dependencies     []Dependency
-	EntryPoints      []string
-	AnalyzedAt       time.Time
+	Language     string
+	BuildSystem  string
+	RootPath     string
+	SourceDirs   []string
+	TestDirs     []string
+	Dependencies []Dependency
+	EntryPoints  []string
+	AnalyzedAt   time.Time
 }
 
 // Dependency represents a project dependency.
@@ -73,11 +73,11 @@ type Memory interface {
 
 // ProjectMetadata contains high-level project information.
 type ProjectMetadata struct {
-	Name         string
-	Description  string
-	Purpose      string
-	Constraints  []string
-	UpdatedAt    time.Time
+	Name        string
+	Description string
+	Purpose     string
+	Constraints []string
+	UpdatedAt   time.Time
 }
 
 // Backlog represents the work queue.
@@ -91,7 +91,7 @@ type BacklogTask struct {
 	ID          string
 	Title       string
 	Description string
-	Priority    int // 1=highest, 10=lowest
+	Priority    int    // 1=highest, 10=lowest
 	Status      string // "new", "in-progress", "blocked", "done"
 	Estimate    time.Duration
 	CreatedAt   time.Time
@@ -100,15 +100,15 @@ type BacklogTask struct {
 
 // CurrentTask represents the task currently being executed.
 type CurrentTask struct {
-	TaskID      string
-	Title       string
-	Plan        string
-	Progress    float64 // 0.0 to 1.0
-	StartedAt   time.Time
-	Checkpoint  string
-	Status      string // "not-started", "planning", "implementing", "testing", "reviewing", "committing"
-	Errors      []string
-	UpdatedAt   time.Time
+	TaskID     string
+	Title      string
+	Plan       string
+	Progress   float64 // 0.0 to 1.0
+	StartedAt  time.Time
+	Checkpoint string
+	Status     string // "not-started", "planning", "implementing", "testing", "reviewing", "committing"
+	Errors     []string
+	UpdatedAt  time.Time
 }
 
 // Changelog tracks completed work.
@@ -119,21 +119,21 @@ type Changelog struct {
 
 // ChangelogEntry represents a completed task.
 type ChangelogEntry struct {
-	TaskID    string
-	Title     string
-	Date      time.Time
-	Commit    string
-	Summary   string
+	TaskID  string
+	Title   string
+	Date    time.Time
+	Commit  string
+	Summary string
 }
 
 // Decision represents an architectural decision.
 type Decision struct {
-	ID      string
-	Title   string
-	Status  string // "proposed", "accepted", "rejected", "superseded"
-	Context string
+	ID        string
+	Title     string
+	Status    string // "proposed", "accepted", "rejected", "superseded"
+	Context   string
 	Rationale string
-	Date    time.Time
+	Date      time.Time
 }
 
 // ClaudeSessionManager manages Claude Code sessions.
@@ -156,35 +156,35 @@ type ClaudeSessionManager interface {
 
 // SessionResult contains results from Claude execution.
 type SessionResult struct {
-	SessionID    string
-	Output       string
-	Errors       []string
-	ExecutedAt   time.Time
-	Duration     time.Duration
-	TokensUsed   int
-	QuotaUsed    float64
+	SessionID  string
+	Output     string
+	Errors     []string
+	ExecutedAt time.Time
+	Duration   time.Duration
+	TokensUsed int
+	QuotaUsed  float64
 }
 
 // SessionStatus represents current session state.
 type SessionStatus struct {
-	SessionID        string
-	IsActive         bool
-	LastActivity     time.Time
-	TokensUsed       int
-	QuotaRemaining   float64
-	QuotaResetTime   time.Time
+	SessionID      string
+	IsActive       bool
+	LastActivity   time.Time
+	TokensUsed     int
+	QuotaRemaining float64
+	QuotaResetTime time.Time
 }
 
 // FailureType categorizes failures.
 type FailureType string
 
 const (
-	FailureTypeCrash         FailureType = "crash"
-	FailureTypeQuota         FailureType = "quota_exhausted"
-	FailureTypeNetwork       FailureType = "network"
-	FailureTypeGit           FailureType = "git"
-	FailureTypeInterruption  FailureType = "interruption"
-	FailureTypeTimeout       FailureType = "timeout"
+	FailureTypeCrash        FailureType = "crash"
+	FailureTypeQuota        FailureType = "quota_exhausted"
+	FailureTypeNetwork      FailureType = "network"
+	FailureTypeGit          FailureType = "git"
+	FailureTypeInterruption FailureType = "interruption"
+	FailureTypeTimeout      FailureType = "timeout"
 )
 
 // CheckpointManager manages system state checkpoints.
@@ -205,15 +205,15 @@ type CheckpointManager interface {
 
 // CheckpointState represents a complete system state snapshot.
 type CheckpointState struct {
-	ID              string
-	Timestamp       time.Time
-	TaskID          string
-	TaskState       string
-	Progress        float64
-	GitCommit       string
-	MemorySnapshot  interface{}
-	QuotaState      *QuotaSnapshot
-	Metrics         map[string]interface{}
+	ID             string
+	Timestamp      time.Time
+	TaskID         string
+	TaskState      string
+	Progress       float64
+	GitCommit      string
+	MemorySnapshot interface{}
+	QuotaState     *QuotaSnapshot
+	Metrics        map[string]interface{}
 }
 
 // CheckpointMetadata contains checkpoint information.
@@ -253,14 +253,14 @@ type GitManager interface {
 
 // GitStatus represents current git state.
 type GitStatus struct {
-	Branch           string
-	IsClean          bool
-	StagedChanges    []string
-	UnstagedChanges  []string
-	UntrackedFiles   []string
-	HasConflicts     bool
-	AheadOfOrigin    int
-	BehindOrigin     int
+	Branch          string
+	IsClean         bool
+	StagedChanges   []string
+	UnstagedChanges []string
+	UntrackedFiles  []string
+	HasConflicts    bool
+	AheadOfOrigin   int
+	BehindOrigin    int
 }
 
 // GitCommit represents a git commit.
@@ -295,13 +295,13 @@ type Planner interface {
 
 // TaskAnalysis contains analysis of a task.
 type TaskAnalysis struct {
-	TaskID         string
-	Complexity     string // "low", "medium", "high"
-	Dependencies   []string
-	Risks          []Risk
-	Blockers       []string
-	EstimatedTime  time.Duration
-	AnalyzedAt     time.Time
+	TaskID        string
+	Complexity    string // "low", "medium", "high"
+	Dependencies  []string
+	Risks         []Risk
+	Blockers      []string
+	EstimatedTime time.Duration
+	AnalyzedAt    time.Time
 }
 
 // ImplementationPlan outlines how to implement a task.
@@ -335,13 +335,13 @@ type Risk struct {
 
 // ProjectState represents current project conditions.
 type ProjectState struct {
-	Language       string
-	BuildSystem    string
-	TestCoverage   float64
-	LintScore      float64
-	SecurityScore  float64
-	TechnicalDebt  []string
-	LastAnalysis   time.Time
+	Language      string
+	BuildSystem   string
+	TestCoverage  float64
+	LintScore     float64
+	SecurityScore float64
+	TechnicalDebt []string
+	LastAnalysis  time.Time
 }
 
 // TaskExecutor executes tasks end-to-end.
@@ -357,25 +357,25 @@ type TaskExecutor interface {
 
 // TaskResult contains task execution results.
 type TaskResult struct {
-	TaskID          string
-	Success         bool
-	Output          string
-	Errors          []string
-	ArtifactsPath   string
-	Duration        time.Duration
-	StartedAt       time.Time
-	CompletedAt     time.Time
-	CommitHash      string
+	TaskID        string
+	Success       bool
+	Output        string
+	Errors        []string
+	ArtifactsPath string
+	Duration      time.Duration
+	StartedAt     time.Time
+	CompletedAt   time.Time
+	CommitHash    string
 }
 
 // TaskProgress represents current execution progress.
 type TaskProgress struct {
-	TaskID         string
+	TaskID          string
 	PercentComplete float64
-	CurrentStep    string
-	StartedAt      time.Time
-	EstimatedEnd   time.Time
-	Errors         []string
+	CurrentStep     string
+	StartedAt       time.Time
+	EstimatedEnd    time.Time
+	Errors          []string
 }
 
 // QualityGate verifies code quality.
@@ -401,10 +401,10 @@ type QualityResult struct {
 
 // Finding represents a quality finding.
 type Finding struct {
-	Level       string // "info", "warning", "error"
-	Message     string
-	Location    string // file:line:column
-	Suggestion  string
+	Level      string // "info", "warning", "error"
+	Message    string
+	Location   string // file:line:column
+	Suggestion string
 }
 
 // Reviewer performs self-review from multiple perspectives.
@@ -420,11 +420,11 @@ type Reviewer interface {
 
 // CodeReview represents a code review from one perspective.
 type CodeReview struct {
-	Perspective string // "developer", "reviewer", "security", "performance", "qa", "documentation"
-	Approved    bool
-	Findings    []ReviewFinding
+	Perspective    string // "developer", "reviewer", "security", "performance", "qa", "documentation"
+	Approved       bool
+	Findings       []ReviewFinding
 	SuggestChanges string
-	ExecutedAt  time.Time
+	ExecutedAt     time.Time
 }
 
 // ReviewFinding represents a review finding.
@@ -438,18 +438,18 @@ type ReviewFinding struct {
 
 // DesignReview represents a design review.
 type DesignReview struct {
-	Approved   bool
-	IsClean    bool
-	Issues     []string
+	Approved    bool
+	IsClean     bool
+	Issues      []string
 	Suggestions []string
 }
 
 // SecurityReview represents security findings.
 type SecurityReview struct {
-	Approved         bool
+	Approved             bool
 	VulnerabilitiesFound int
-	Vulnerabilities  []Vulnerability
-	Recommendations  []string
+	Vulnerabilities      []Vulnerability
+	Recommendations      []string
 }
 
 // Vulnerability represents a security issue.
@@ -514,13 +514,13 @@ type Runner interface {
 
 // RunResult contains results from Claude execution.
 type RunResult struct {
-	SessionID   string
-	Success     bool
-	Output      string
-	Errors      []string
-	Duration    time.Duration
-	TokensUsed  int
-	ExecutedAt  time.Time
+	SessionID  string
+	Success    bool
+	Output     string
+	Errors     []string
+	Duration   time.Duration
+	TokensUsed int
+	ExecutedAt time.Time
 }
 
 // ProjectMemory represents project context for Claude.

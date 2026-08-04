@@ -11,7 +11,7 @@ import (
 
 // Logger wraps zap logger with structured logging capabilities.
 type Logger struct {
-	z *zap.Logger
+	z  *zap.Logger
 	mu sync.RWMutex
 }
 

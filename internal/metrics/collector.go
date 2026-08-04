@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 )
@@ -203,10 +204,22 @@ func (c *Collector) Reset() {
 }
 
 // metricKey creates a metric key from name and tags.
+// Tag keys are sorted so the same tag set always yields the same key,
+// independent of Go's randomized map iteration order.
 func (c *Collector) metricKey(name string, tags map[string]string) string {
+	if len(tags) == 0 {
+		return name
+	}
+
+	keys := make([]string, 0, len(tags))
+	for k := range tags {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	key := name
-	for k, v := range tags {
-		key += fmt.Sprintf("__%s_%s", k, v)
+	for _, k := range keys {
+		key += fmt.Sprintf("__%s_%s", k, tags[k])
 	}
 	return key
 }
