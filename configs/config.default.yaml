@@ -1,0 +1,174 @@
+# 24-7 AI Lead Engineer - Configuration
+# This is the default configuration template.
+# Create config.yaml in your project to override these values.
+
+# Project Configuration
+project:
+  # Project name (used in logging and reports)
+  name: "24-7-AI-LeadEngineer"
+
+  # Path to the project root
+  path: "."
+
+  # Project type (go, node, python, rust, etc.)
+  type: "go"
+
+# Claude Configuration
+claude:
+  # Enable/disable Claude integration
+  enabled: true
+
+  # Model to use (claude-opus-5, claude-sonnet-5, claude-haiku-4-5, etc.)
+  model: "claude-opus-5"
+
+  # Maximum retries on failure
+  maxRetries: 3
+
+  # Timeout for Claude operations (seconds)
+  timeoutSeconds: 300
+
+  # Context window size (tokens)
+  contextWindowSize: 200000
+
+  # Maximum tokens per single request
+  maxTokensPerRequest: 4000
+
+# Quota Management
+quota:
+  # How often to check quota status (seconds)
+  checkInterval: 30
+
+  # Threshold for warning (0.0-1.0, default 0.8 = 80% usage)
+  warningThreshold: 0.8
+
+  # Threshold for considering quota exhausted (0.0-1.0, default 0.95 = 95% usage)
+  exhaustionThreshold: 0.95
+
+  # Automatically sleep when quota is exhausted
+  autoSleepOnExhaustion: true
+
+  # How long to sleep when quota is exhausted (seconds)
+  sleepDuration: 3600
+
+# Checkpoint Management
+checkpoint:
+  # How often to create checkpoints (seconds)
+  interval: 300
+
+  # Maximum size of checkpoint before compression (MB)
+  maxSize: "100MB"
+
+  # How many checkpoints to keep
+  retention: 7
+
+  # Compress old checkpoints
+  compression: true
+
+# Git Configuration
+git:
+  # Committer name
+  committerName: "24-7-AI-LeadEngineer"
+
+  # Committer email
+  committerEmail: "ai@leadengineer.local"
+
+  # Automatically retry git operations on failure
+  autoRetry: true
+
+  # Number of retry attempts
+  retryAttempts: 4
+
+  # Base retry backoff duration (milliseconds)
+  retryBackoffMs: 1000
+
+# Task Configuration
+tasks:
+  # Maximum duration for a single task (seconds)
+  maxDuration: 3600
+
+  # Automatically checkpoint after task completion
+  autoCheckpoint: true
+
+  # Automatically commit changes after task completion
+  autoCommit: true
+
+  # Enable parallel task execution (experimental)
+  parallelExecution: false
+
+# Logging Configuration
+logging:
+  # Log level (debug, info, warn, error)
+  level: "info"
+
+  # Log format (json, text)
+  format: "json"
+
+  # Log output file
+  output: ".ai/logs/app.log"
+
+  # How many days to retain logs
+  retention: 30
+
+# Metrics Configuration
+metrics:
+  # Enable metrics collection
+  enabled: true
+
+  # How often to export metrics (seconds)
+  exportInterval: 300
+
+  # Path to export metrics
+  exportPath: ".ai/metrics/"
+
+  # Prometheus metrics port
+  prometheusPort: 9090
+
+# Plugins Configuration
+plugins:
+  # Enable/disable plugins
+  enabled: false
+
+  # Plugin directory
+  directory: "plugins/"
+
+# Dashboard Configuration
+dashboard:
+  # Enable the web dashboard
+  enabled: true
+
+  # Dashboard port
+  port: 8080
+
+  # Dashboard bind address
+  address: "127.0.0.1"
+
+# Quality Gates
+quality:
+  # Require all tests to pass
+  requireTests: true
+
+  # Minimum test coverage (0.0-1.0)
+  minimumCoverage: 0.80
+
+  # Run linter
+  runLinter: true
+
+  # Run security scanner
+  runSecurity: true
+
+  # Run performance checks
+  runPerformance: false
+
+# Recovery Configuration
+recovery:
+  # Enable automatic recovery
+  enabled: true
+
+  # Maximum recovery attempts
+  maxAttempts: 3
+
+  # Recovery timeout (seconds)
+  timeoutSeconds: 300
+
+  # Strategies for conflict resolution (ours, theirs, manual)
+  conflictStrategy: "manual"
