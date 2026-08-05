@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -884,5 +885,126 @@ func TestOverridesBeatTheConfigFile(t *testing.T) {
 	}
 	if strings.Contains(string(onDisk), "true") {
 		t.Errorf("an override must not be persisted: %s", onDisk)
+	}
+}
+
+// --- continuous operation ---
+
+// The backlog emptying is a pause, not the end of the work. Without this the
+// process needs an external scheduler to be what its name promises.
+func TestWatchKeepsRunningOnAnEmptyBacklog(t *testing.T) {
+	a := newTestApp(t)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	if _, err := a.Initialize(ctx, "Demo"); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	idled := make(chan struct{}, 4)
+	done := make(chan error, 1)
+
+	go func() {
+		done <- a.Watch(ctx, WatchOptions{
+			Interval: 10 * time.Millisecond,
+			OnIdle:   func(time.Duration) { idled <- struct{}{} },
+		})
+	}()
+
+	// Two idle passes prove it looped rather than returning after the first.
+	for i := 0; i < 2; i++ {
+		select {
+		case <-idled:
+		case <-time.After(5 * time.Second):
+			cancel()
+			t.Fatal("watch stopped instead of waiting for new work")
+		}
+	}
+
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Errorf("got %v, want context.Canceled after cancelling", err)
+	}
+}
+
+// Ctrl-C during the sleep must take effect immediately; a bare time.Sleep
+// would ignore it for the whole interval.
+func TestWatchStopsPromptlyOnCancellation(t *testing.T) {
+	a := newTestApp(t)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	if _, err := a.Initialize(ctx, "Demo"); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- a.Watch(ctx, WatchOptions{Interval: time.Hour})
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("got %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("watch did not stop; it slept through the cancellation")
+	}
+}
+
+// A problem no amount of retrying will clear — a dirty tree, a missing
+// toolchain — would otherwise burn quota producing the same error forever.
+func TestWatchStopsAfterRepeatedFailuresWithNoProgress(t *testing.T) {
+	a := appWithClaude(t, fakeClaudeExecutor{stderr: "something broke", exitCode: 1})
+	ctx := context.Background()
+
+	if _, err := a.Initialize(ctx, "Demo"); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	// Enough tasks that the backlog never empties on its own.
+	backlog := &interfaces.Backlog{}
+	for i := 0; i < 10; i++ {
+		backlog.Tasks = append(backlog.Tasks, interfaces.BacklogTask{
+			ID: fmt.Sprintf("T-%d", i), Title: "work", Priority: 1, Status: "new",
+		})
+	}
+	if err := a.Memory.SaveBacklog(ctx, backlog); err != nil {
+		t.Fatalf("SaveBacklog failed: %v", err)
+	}
+
+	failures := 0
+	err := a.Watch(ctx, WatchOptions{
+		Interval:               time.Millisecond,
+		MaxConsecutiveFailures: 2,
+		OnFailure:              func(error, int) { failures++ },
+	})
+
+	if !errors.Is(err, ErrTooManyFailures) {
+		t.Fatalf("got %v, want ErrTooManyFailures", err)
+	}
+	if failures != 2 {
+		t.Errorf("failures: got %d, want the configured limit of 2", failures)
+	}
+}
+
+func TestWatchDefaultsAreApplied(t *testing.T) {
+	a := newTestApp(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// A cancelled context returns before any sleeping, so this only asserts
+	// that zero values do not mean "no wait" or "stop on first failure".
+	if err := a.Watch(ctx, WatchOptions{}); !errors.Is(err, context.Canceled) {
+		t.Errorf("got %v, want context.Canceled", err)
+	}
+
+	if DefaultWatchInterval <= 0 {
+		t.Error("the default interval must be positive, or an empty backlog spins")
+	}
+	if DefaultMaxConsecutiveFailures <= 0 {
+		t.Error("the default failure bound must be positive")
 	}
 }

@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/app"
+	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/executor"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/toolchain"
 )
 
@@ -71,6 +74,8 @@ func newStartCommand(flags *globalFlags) *cobra.Command {
 	var maxTasks int
 	var once bool
 	var inspectOnly bool
+	var watch bool
+	var watchInterval time.Duration
 
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -78,7 +83,10 @@ func newStartCommand(flags *globalFlags) *cobra.Command {
 		Long: "Executes backlog tasks highest priority first.\n\n" +
 			"Each task is implemented, verified against the quality gates, repaired\n" +
 			"if they fail, and committed only once they pass. The working tree must\n" +
-			"be clean before a task starts, so a commit cannot include unrelated work.",
+			"be clean before a task starts, so a commit cannot include unrelated work.\n\n" +
+			"By default the run ends when the backlog empties. With --watch it keeps\n" +
+			"going, waiting for new tasks and sleeping through usage limits, which is\n" +
+			"what unattended operation needs. Ctrl-C stops it cleanly.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if inspectOnly {
@@ -107,32 +115,14 @@ func newStartCommand(flags *globalFlags) *cobra.Command {
 						"that tests pass. Commits record what was actually checked.\n\n")
 			}
 
+			if watch {
+				return runWatch(cmd, a, out, watchInterval)
+			}
+
 			outcomes, runErr := a.RunLoop(cmd.Context(), maxTasks)
 
 			for _, o := range outcomes {
-				status := "no changes"
-				if o.Committed {
-					status = "committed " + shortHash(o.CommitHash)
-				}
-				_, _ = fmt.Fprintf(out, "%-12s %s  (%s", o.Task.ID, o.Task.Title, status)
-				if o.Repairs > 0 {
-					_, _ = fmt.Fprintf(out, ", %d repair(s)", o.Repairs)
-				}
-				if o.Revisions > 0 {
-					_, _ = fmt.Fprintf(out, ", %d revision(s)", o.Revisions)
-				}
-				_, _ = fmt.Fprintf(out, ", %s)\n", o.Duration.Truncate(time.Millisecond))
-
-				// Findings the reviewer raised but did not block on would
-				// otherwise be lost: nothing else surfaces them, and a
-				// non-blocking finding is still something a human wanted to
-				// know about.
-				if o.Review != nil {
-					for _, f := range o.Review.Findings {
-						_, _ = fmt.Fprintf(out, "             [%s] %s: %s\n",
-							f.Severity, f.Perspective, f.Description)
-					}
-				}
+				printOutcome(out, o)
 			}
 
 			if runErr != nil {
@@ -146,6 +136,8 @@ func newStartCommand(flags *globalFlags) *cobra.Command {
 
 			if len(outcomes) == 0 {
 				_, _ = fmt.Fprintln(out, "No open tasks in the backlog.")
+				_, _ = fmt.Fprintln(out,
+					"Add tasks to .ai/BACKLOG.md, or run with --watch to pick them up as they arrive.")
 			}
 
 			return nil
@@ -156,8 +148,68 @@ func newStartCommand(flags *globalFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&once, "once", false, "run a single task and stop")
 	cmd.Flags().BoolVar(&inspectOnly, "inspect-only", false,
 		"skip the project's tooling; check changes by reading the diff instead")
+	cmd.Flags().BoolVar(&watch, "watch", false,
+		"keep running: drain the backlog, then wait for new tasks instead of exiting")
+	cmd.Flags().DurationVar(&watchInterval, "watch-interval", app.DefaultWatchInterval,
+		"how long to wait before re-reading an empty backlog")
 
 	return cmd
+}
+
+// printOutcome renders one completed task.
+func printOutcome(out io.Writer, o *executor.Outcome) {
+	status := "no changes"
+	if o.Committed {
+		status = "committed " + shortHash(o.CommitHash)
+	}
+
+	_, _ = fmt.Fprintf(out, "%-12s %s  (%s", o.Task.ID, o.Task.Title, status)
+	if o.Repairs > 0 {
+		_, _ = fmt.Fprintf(out, ", %d repair(s)", o.Repairs)
+	}
+	if o.Revisions > 0 {
+		_, _ = fmt.Fprintf(out, ", %d revision(s)", o.Revisions)
+	}
+	_, _ = fmt.Fprintf(out, ", %s)\n", o.Duration.Truncate(time.Millisecond))
+
+	// Findings the reviewer raised but did not block on would otherwise be
+	// lost: nothing else surfaces them, and a non-blocking finding is still
+	// something a human wanted to know about.
+	if o.Review != nil {
+		for _, f := range o.Review.Findings {
+			_, _ = fmt.Fprintf(out, "             [%s] %s: %s\n",
+				f.Severity, f.Perspective, f.Description)
+		}
+	}
+}
+
+// runWatch drives continuous operation, reporting as it goes.
+//
+// Progress is printed per task rather than collected and printed at the end,
+// because in this mode there is no end — output withheld until the run
+// finishes would never appear.
+func runWatch(cmd *cobra.Command, a *app.App, out io.Writer, interval time.Duration) error {
+	_, _ = fmt.Fprintf(out, "Watching for work (checking every %s). Ctrl-C to stop.\n\n", interval)
+
+	err := a.Watch(cmd.Context(), app.WatchOptions{
+		Interval: interval,
+		OnOutcome: func(o *executor.Outcome) {
+			printOutcome(out, o)
+		},
+		OnFailure: func(err error, consecutive int) {
+			_, _ = fmt.Fprintf(out, "run failed (%d in a row): %v\n", consecutive, err)
+		},
+	})
+
+	// Being told to stop is how this mode ends, so it is reported as a clean
+	// stop rather than as the command failing. Both forms count: Ctrl-C and
+	// SIGTERM cancel the context, and a deadline is a caller saying to run for
+	// a fixed period — neither is the work going wrong.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		_, _ = fmt.Fprintln(out, "\nStopped.")
+		return nil
+	}
+	return err
 }
 
 func shortHash(h string) string {

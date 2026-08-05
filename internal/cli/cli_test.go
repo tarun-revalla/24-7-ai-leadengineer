@@ -491,3 +491,137 @@ func TestRecoverWithInterruptedDirtyTask(t *testing.T) {
 		t.Errorf("recover output missing guidance:\n%s", out)
 	}
 }
+
+// --- watch mode ---
+
+// runWithContext lets a test stop a command that would otherwise never return.
+func runWithContext(t *testing.T, ctx context.Context, dir string, args ...string) (string, error) {
+	t.Helper()
+
+	root := NewRootCommand("test", "none", "none")
+
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs(append([]string{"-C", dir}, args...))
+
+	err := root.ExecuteContext(ctx)
+	return buf.String(), err
+}
+
+// Ctrl-C is how this mode is meant to end, so it reports a clean stop rather
+// than the command failing.
+func TestStartWatchStopsCleanlyOnCancellation(t *testing.T) {
+	dir := newRepo(t)
+	if _, err := run(t, dir, "init"); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	type result struct {
+		out string
+		err error
+	}
+	done := make(chan result, 1)
+
+	go func() {
+		out, err := runWithContext(t, ctx, dir, "start", "--watch", "--watch-interval", "20ms")
+		done <- result{out, err}
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Errorf("cancelling a watch should not be an error: %v", got.err)
+		}
+		if !strings.Contains(got.out, "Watching for work") {
+			t.Errorf("the watch should announce itself:\n%s", got.out)
+		}
+		if !strings.Contains(got.out, "Stopped") {
+			t.Errorf("stopping should be reported:\n%s", got.out)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the watch did not stop after cancellation")
+	}
+}
+
+func TestStartWatchFlagsAreAccepted(t *testing.T) {
+	dir := newRepo(t)
+	if _, err := run(t, dir, "init"); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	out, err := runWithContext(t, ctx, dir, "start", "--watch", "--watch-interval", "50ms")
+	if err != nil {
+		t.Errorf("watch with an explicit interval should run: %v", err)
+	}
+	if !strings.Contains(out, "50ms") {
+		t.Errorf("the configured interval should be reported:\n%s", out)
+	}
+}
+
+// Someone whose backlog is empty should be told how to keep the system
+// running rather than left thinking it does not work.
+func TestEmptyBacklogSuggestsWatch(t *testing.T) {
+	dir := newRepo(t)
+	if _, err := run(t, dir, "init"); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+
+	out, err := run(t, dir, "start")
+	if err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	if !strings.Contains(out, "--watch") {
+		t.Errorf("an empty backlog should point at --watch:\n%s", out)
+	}
+	if !strings.Contains(out, "BACKLOG.md") {
+		t.Errorf("it should say where tasks go:\n%s", out)
+	}
+}
+
+func TestInspectOnlyAnnouncesTheTradeoff(t *testing.T) {
+	dir := newRepo(t)
+	if _, err := run(t, dir, "init"); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+
+	out, _ := run(t, dir, "start", "--inspect-only")
+
+	// Stated before results, because it changes what the commits mean.
+	if !strings.Contains(out, "Inspection mode") {
+		t.Errorf("inspection mode should announce itself:\n%s", out)
+	}
+	if !strings.Contains(out, "cannot establish") {
+		t.Errorf("the limitation should be stated plainly:\n%s", out)
+	}
+}
+
+func TestDetectOnUninitializedProject(t *testing.T) {
+	dir := newRepo(t)
+
+	// Claude is not available here, so this only asserts the command is wired
+	// and fails rather than panicking or silently succeeding.
+	if _, err := run(t, dir, "detect"); err == nil {
+		t.Error("detect should report a failure when it cannot run")
+	}
+}
+
+func TestDetectCommandIsRegistered(t *testing.T) {
+	out, err := run(t, newRepo(t), "--help")
+	if err != nil {
+		t.Fatalf("help failed: %v", err)
+	}
+	for _, want := range []string{"detect", "start", "recover", "status"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the command list is missing %q:\n%s", want, out)
+		}
+	}
+}
