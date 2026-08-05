@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/checkpoint"
+	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/quota"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/pkg/interfaces"
 )
 
@@ -33,6 +34,10 @@ type Status struct {
 	CheckpointErr      error
 	CheckpointCount    int
 	CorruptCheckpoints []string
+
+	Quota          *quota.State
+	QuotaAvailable bool
+	QuotaRemaining time.Duration
 }
 
 // Status gathers the current state of the project.
@@ -68,6 +73,9 @@ func (a *App) Status(ctx context.Context) *Status {
 			}
 		}
 	}
+
+	s.Quota = a.Quota.Current(ctx)
+	s.QuotaAvailable, s.QuotaRemaining = a.Quota.Available(ctx)
 
 	return s
 }
@@ -188,6 +196,26 @@ func (s *Status) Render() string {
 	}
 	if n := len(s.CorruptCheckpoints); n > 0 {
 		out.line("  %d corrupt checkpoint(s) present; recovery will skip them", n)
+	}
+
+	out.section("Claude quota")
+	if s.QuotaAvailable {
+		out.line("  available")
+		if s.Quota != nil && s.Quota.ConsecutiveHits > 0 {
+			out.line("  last limit: %s", s.Quota.DetectedAt.Format(time.RFC3339))
+		}
+	} else {
+		out.line("  in cooldown, %s remaining", truncateDuration(s.QuotaRemaining))
+		out.line("  resumes:  %s", s.Quota.ResumeAt.Format(time.RFC3339))
+		if s.Quota.Reason != "" {
+			out.line("  reason:   %s", s.Quota.Reason)
+		}
+		if s.Quota.ConsecutiveHits > 1 {
+			out.line("  hits:     %d consecutive (cooldown widened)", s.Quota.ConsecutiveHits)
+		}
+		if s.Quota.LastCheckpoint != "" {
+			out.line("  saved as: %s", s.Quota.LastCheckpoint)
+		}
 	}
 
 	return out.String()

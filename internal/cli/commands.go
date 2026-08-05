@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -296,4 +297,78 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+func newQuotaCommand(flags *globalFlags) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "quota",
+		Short: "Inspect and manage the Claude usage cooldown",
+	}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "status",
+		Short: "Show whether Claude may be called now",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := flags.open()
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+
+			ctx := cmd.Context()
+			state := a.Quota.Current(ctx)
+			available, remaining := a.Quota.Available(ctx)
+
+			out := cmd.OutOrStdout()
+			if available {
+				fmt.Fprintln(out, "Quota available.")
+				if state.ConsecutiveHits > 0 {
+					fmt.Fprintf(out, "Last limit hit %s.\n", state.DetectedAt.Format(time.RFC3339))
+				}
+				return nil
+			}
+
+			fmt.Fprintf(out, "In cooldown for another %s.\n", remaining.Truncate(time.Second))
+			fmt.Fprintf(out, "Resumes:    %s\n", state.ResumeAt.Format(time.RFC3339))
+			fmt.Fprintf(out, "Detected:   %s\n", state.DetectedAt.Format(time.RFC3339))
+			fmt.Fprintf(out, "Reason:     %s\n", orDash(state.Reason))
+			fmt.Fprintf(out, "Hits:       %d consecutive\n", state.ConsecutiveHits)
+			fmt.Fprintf(out, "Checkpoint: %s\n", orDash(state.LastCheckpoint))
+			return nil
+		},
+	})
+
+	clear := &cobra.Command{
+		Use:   "clear",
+		Short: "End the cooldown early",
+		Long: "Clears the recorded cooldown so work resumes immediately.\n\n" +
+			"Cooldowns are estimated when the provider gives no reset time, so one\n" +
+			"can outlast the limit it was protecting against. Clearing a cooldown\n" +
+			"that is still in force will simply hit the limit again.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := flags.open()
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+
+			ctx := cmd.Context()
+			if available, _ := a.Quota.Available(ctx); available {
+				fmt.Fprintln(cmd.OutOrStdout(), "No cooldown in force; nothing to clear.")
+				return nil
+			}
+
+			if err := a.Quota.Clear(ctx); err != nil {
+				return err
+			}
+
+			fmt.Fprintln(cmd.OutOrStdout(), "Cooldown cleared; work may resume.")
+			return nil
+		},
+	}
+	cmd.AddCommand(clear)
+
+	return cmd
 }

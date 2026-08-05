@@ -5,6 +5,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,7 +17,13 @@ import (
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/logging"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/memory"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/metrics"
+	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/quota"
 )
+
+// ErrQuotaExhausted reports that work stopped because a usage limit was hit.
+// The state has been checkpointed and a resume time recorded; the caller
+// should stop rather than retry.
+var ErrQuotaExhausted = errors.New("claude usage limit reached; cooldown recorded")
 
 // StateDir is the directory holding all persistent system state.
 const StateDir = ".ai"
@@ -31,6 +38,7 @@ type App struct {
 	Git         *git.Manager
 	Claude      *claude.Manager
 	Metrics     *metrics.Collector
+	Quota       *quota.Manager
 }
 
 // Options controls construction.
@@ -90,6 +98,14 @@ func New(opts Options) (*App, error) {
 		return nil, fmt.Errorf("failed to open session store: %w", err)
 	}
 
+	quotas, err := quota.New(
+		filepath.Join(projectPath, StateDir),
+		quota.WithCooldown(cfg.GetDuration("quota.sleepDuration")),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open quota state: %w", err)
+	}
+
 	return &App{
 		ProjectPath: projectPath,
 		Config:      cfg,
@@ -105,6 +121,7 @@ func New(opts Options) (*App, error) {
 		),
 		Claude:  sessions,
 		Metrics: metrics.New(),
+		Quota:   quotas,
 	}, nil
 }
 

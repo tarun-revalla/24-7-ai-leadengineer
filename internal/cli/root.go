@@ -48,6 +48,7 @@ func NewRootCommand(version, commit, date string) *cobra.Command {
 		newStatusCommand(flags),
 		newCheckpointCommand(flags),
 		newConfigCommand(flags),
+		newQuotaCommand(flags),
 		newStartCommand(flags),
 		newRecoverCommand(flags),
 	)

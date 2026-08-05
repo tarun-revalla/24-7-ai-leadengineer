@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/atomicfile"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/pkg/interfaces"
 )
 
@@ -102,7 +103,7 @@ func (s *Store) CreateCheckpoint(ctx context.Context, state *interfaces.Checkpoi
 		return "", err
 	}
 
-	if err := s.writeAtomic(s.pathFor(id), data); err != nil {
+	if err := atomicfile.Write(s.pathFor(id), data, 0o644); err != nil {
 		return "", err
 	}
 
@@ -291,62 +292,6 @@ func (s *Store) listIDs() ([]string, error) {
 	sort.Sort(sort.Reverse(sort.StringSlice(ids)))
 
 	return ids, nil
-}
-
-// writeAtomic writes data so that readers observe either the old file or the
-// complete new one. The temporary file is created in the destination
-// directory so the rename stays within one filesystem.
-func (s *Store) writeAtomic(path string, data []byte) error {
-	dir := filepath.Dir(path)
-
-	tmp, err := os.CreateTemp(dir, ".tmp-checkpoint-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temporary checkpoint file: %w", err)
-	}
-	tmpName := tmp.Name()
-
-	// Remove the temporary file on any path that does not reach the rename.
-	defer func() {
-		if tmpName != "" {
-			_ = os.Remove(tmpName)
-		}
-	}()
-
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("failed to write checkpoint: %w", err)
-	}
-
-	// Flush to storage before the rename, otherwise a power loss can leave the
-	// directory entry pointing at unwritten data.
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("failed to flush checkpoint: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("failed to close checkpoint: %w", err)
-	}
-
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("failed to commit checkpoint: %w", err)
-	}
-	tmpName = ""
-
-	return syncDir(dir)
-}
-
-// syncDir flushes a directory entry so a rename survives power loss.
-// Not all platforms permit opening a directory for sync; failure to do so is
-// not treated as a checkpoint failure since the data itself is already durable.
-func syncDir(dir string) error {
-	d, err := os.Open(dir)
-	if err != nil {
-		return nil
-	}
-	defer d.Close()
-
-	_ = d.Sync()
-	return nil
 }
 
 // nextID builds an identifier that sorts chronologically. The counter

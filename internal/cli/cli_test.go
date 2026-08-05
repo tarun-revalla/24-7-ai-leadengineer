@@ -344,3 +344,75 @@ func TestCheckpointPruneRejectsZero(t *testing.T) {
 		t.Error("prune with --keep 0 deleted everything")
 	}
 }
+
+func TestQuotaStatusWhenAvailable(t *testing.T) {
+	dir := newRepo(t)
+	run(t, dir, "init")
+
+	out, err := run(t, dir, "quota", "status")
+	if err != nil {
+		t.Fatalf("quota status failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "available") {
+		t.Errorf("expected an available report:\n%s", out)
+	}
+}
+
+func TestQuotaStatusDuringCooldown(t *testing.T) {
+	dir := newRepo(t)
+	run(t, dir, "init")
+
+	a, err := app.New(app.Options{ProjectPath: dir, LogToStderr: true})
+	if err != nil {
+		t.Fatalf("app.New failed: %v", err)
+	}
+	a.EnterQuotaCooldown(context.Background(),
+		&interfaces.CheckpointState{TaskID: "T-7"}, time.Time{}, "usage limit reached")
+	a.Close()
+
+	out, err := run(t, dir, "quota", "status")
+	if err != nil {
+		t.Fatalf("quota status failed: %v\n%s", err, out)
+	}
+
+	for _, want := range []string{"cooldown", "Resumes", "usage limit reached", "Checkpoint"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("quota status missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestQuotaClear(t *testing.T) {
+	dir := newRepo(t)
+	run(t, dir, "init")
+
+	a, _ := app.New(app.Options{ProjectPath: dir, LogToStderr: true})
+	a.EnterQuotaCooldown(context.Background(), nil, time.Time{}, "usage limit")
+	a.Close()
+
+	out, err := run(t, dir, "quota", "clear")
+	if err != nil {
+		t.Fatalf("quota clear failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "cleared") {
+		t.Errorf("expected confirmation:\n%s", out)
+	}
+
+	after, _ := run(t, dir, "quota", "status")
+	if !strings.Contains(after, "available") {
+		t.Errorf("quota should be available after clearing:\n%s", after)
+	}
+}
+
+func TestQuotaClearWithNoCooldown(t *testing.T) {
+	dir := newRepo(t)
+	run(t, dir, "init")
+
+	out, err := run(t, dir, "quota", "clear")
+	if err != nil {
+		t.Fatalf("quota clear failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "nothing to clear") {
+		t.Errorf("expected a no-op message:\n%s", out)
+	}
+}
