@@ -14,7 +14,14 @@ import (
 // Claude decides how; a prompt that leaves scope open invites changes the
 // backlog never asked for, which then get committed under a task that does not
 // describe them.
-func BuildImplementPrompt(project *interfaces.ProjectMetadata, task interfaces.BacklogTask) string {
+// expectations describe what the configured gates will require. They are
+// passed in rather than hardcoded because the bar depends on the project: a
+// change to a TypeScript webapp is not held to gofmt.
+func BuildImplementPrompt(
+	project *interfaces.ProjectMetadata,
+	task interfaces.BacklogTask,
+	expectations []string,
+) string {
 	var b strings.Builder
 
 	b.WriteString("Implement exactly one task in this repository.\n\n")
@@ -48,11 +55,19 @@ func BuildImplementPrompt(project *interfaces.ProjectMetadata, task interfaces.B
 - Do not modify anything under .ai/; that state belongs to the system.
 
 ## Definition of done
+`)
 
-The change must compile, pass go vet, be gofmt-clean, and be covered by tests
-that pass with the race detector. Add tests for behaviour you introduce,
-including the failure paths. If you cannot complete the task, say so plainly
-and explain what blocks it rather than leaving partial work behind.
+	if len(expectations) > 0 {
+		b.WriteString("\nThe change will be checked automatically and must:\n\n")
+		for _, e := range expectations {
+			fmt.Fprintf(&b, "- %s\n", e)
+		}
+	}
+
+	b.WriteString(`
+Add tests for behaviour you introduce, including the failure paths. If you
+cannot complete the task, say so plainly and explain what blocks it rather
+than leaving partial work behind.
 `)
 
 	return b.String()

@@ -363,7 +363,7 @@ func (e *Executor) implement(ctx context.Context, task interfaces.BacklogTask) e
 		return fmt.Errorf("failed to read project metadata: %w", err)
 	}
 
-	prompt := BuildImplementPrompt(project, task)
+	prompt := BuildImplementPrompt(project, task, gates.Expectations(e.gates.Gates()))
 
 	e.log.Info("implementing", "task", task.ID)
 

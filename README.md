@@ -96,7 +96,10 @@ document.
 ## Quality gates
 
 Gates run against the whole project after Claude implements a task. Failures are handed back
-with the tools' own output, and the change is re-verified after every repair.
+with the tools' own output, and the change is re-verified after every repair. The gate set is
+chosen from `project.type`.
+
+**Go** (`project.type: go`)
 
 | Gate | Runs | Required |
 | --- | --- | --- |
@@ -107,6 +110,33 @@ with the tools' own output, and the change is re-verified after every repair.
 | `test` | `go test ./... -race -cover`, against a coverage threshold | yes |
 | `lint` | `golangci-lint run` | no — skipped if not installed |
 | `security` | `gosec ./...` | no — skipped if not installed |
+
+**JavaScript / TypeScript** (`project.type: node`, `javascript` or `typescript`)
+
+| Gate | Runs | Required |
+| --- | --- | --- |
+| `secrets` | Same scan — it reads files and needs no toolchain | yes |
+| `install` | `npm ci` / `pnpm install --frozen-lockfile` / `yarn` / `bun`, chosen by lockfile | yes |
+| `format` | `format:check`, `format-check` or `prettier:check` script | no — skipped if undefined |
+| `typecheck` | `typecheck`, `type-check` or `tsc` script | no — skipped if undefined |
+| `build` | `build` script | no — skipped if undefined |
+| `test` | `test:coverage`, `coverage` or `test` script | yes |
+| `lint` | `lint` script | no — skipped if undefined |
+
+Node has no universal toolchain, so these read `package.json` and run the scripts a project
+actually defines rather than assuming commands that may not exist. A script that is not
+defined is a labelled skip, not a silent pass — a library with no build step is a normal
+project. A script that *is* defined and fails still fails the report: `Required()` only
+governs what happens when there is nothing to run.
+
+The package manager is chosen by lockfile, not by what happens to be installed. Running
+`npm install` in a pnpm project rewrites the lockfile and can resolve different versions than
+the ones the project was tested against.
+
+Coverage is read from istanbul's `coverage/coverage-summary.json`, which jest, vitest, c8 and
+nyc all emit under the `json-summary` reporter. Scraping console output instead would break on
+a version bump. If no summary is written, tests still have to pass but the floor is reported as
+unenforced rather than silently satisfied.
 
 Required gates fail when their tooling is missing, because a check that did not execute proves
 nothing. Optional gates record that they were skipped and why, so the gap is visible rather
@@ -157,7 +187,7 @@ prefixed `LEADENG_` override both.
 
 ```yaml
 project:
-  type: "go"          # gate selection follows this
+  type: "go"          # go | node | javascript | typescript — gate selection follows this
 
 claude:
   model: "claude-opus-5"
@@ -227,7 +257,11 @@ failure paths, not that the code ran.
 
 ## Not built
 
-Deliberately out of scope so far, and listed here rather than implied by silence: the web
+Gate sets exist for Go and for JavaScript/TypeScript. Python and Rust are accepted by the
+config validator but have no gates yet, so the executor refuses to run rather than commit work
+nothing checked.
+
+Also deliberately out of scope, and listed here rather than implied by silence: the web
 dashboard, the plugin system, multi-project support, multi-agent orchestration, and hosted
 integrations (GitHub, GitLab, Slack, Docker, Kubernetes). The `dashboard` and `plugins`
 sections in the default config are placeholders for these; nothing reads them yet.

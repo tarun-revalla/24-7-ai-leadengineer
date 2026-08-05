@@ -64,13 +64,13 @@ tasks:
       createdAt: 2026-08-05T09:49:10.833894449Z
       updatedAt: 0001-01-01T00:00:00Z
     - id: PHASE5-003
-      title: Quality gates for non-Go projects
-      description: Node, Python and Rust gate sets. The executor currently refuses to run rather than commit unverified work.
+      title: Quality gates for Python and Rust
+      description: Node and Go gate sets exist. Python and Rust are accepted by config validation but have no gates, so the executor refuses to run.
       priority: 6
       status: new
       createdAt: 2026-08-05T09:49:10.833894449Z
-      updatedAt: 0001-01-01T00:00:00Z
-updatedAt: 2026-08-05T09:49:10.834343694Z
+      updatedAt: 2026-08-05T10:16:24.947147436Z
+updatedAt: 2026-08-05T10:16:24.947794363Z
 ---
 
 # Product Backlog

@@ -25,14 +25,17 @@ var ErrNoWork = executor.ErrNoWork
 func (a *App) Executor() (*executor.Executor, error) {
 	projectType := a.Config.GetString("project.type")
 
+	minCoverage := 0.0
+	if a.Config.GetBool("quality.requireTests") {
+		minCoverage = a.Config.GetFloat64("quality.minimumCoverage")
+	}
+
 	var gateList []gates.Gate
 	switch projectType {
 	case "go":
-		minCoverage := 0.0
-		if a.Config.GetBool("quality.requireTests") {
-			minCoverage = a.Config.GetFloat64("quality.minimumCoverage")
-		}
 		gateList = gates.GoGates(minCoverage)
+	case "node", "javascript", "typescript":
+		gateList = gates.NodeGates(minCoverage)
 	default:
 		return nil, fmt.Errorf("no quality gates are defined for project type %q; "+
 			"committing unverified work is not permitted", projectType)

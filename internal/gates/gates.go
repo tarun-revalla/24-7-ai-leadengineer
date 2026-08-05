@@ -116,6 +116,32 @@ func (r *Report) FailureContext() string {
 	return b.String()
 }
 
+// Expectant is implemented by a gate that can state, in a sentence, what it
+// will require of a change.
+//
+// Optional because the alternative is a hardcoded "definition of done" in the
+// prompt, which is wrong the moment a project is not the language it was
+// written for — telling someone working on a TypeScript webapp that their
+// change must be gofmt-clean is worse than saying nothing.
+type Expectant interface {
+	Expectation() string
+}
+
+// Expectations collects what a gate set will require, for a prompt that has to
+// state the bar a change is actually held to. Gates that cannot describe
+// themselves are omitted rather than guessed at.
+func Expectations(gs []Gate) []string {
+	var out []string
+	for _, g := range gs {
+		if e, ok := g.(Expectant); ok {
+			if s := strings.TrimSpace(e.Expectation()); s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
 // Runner executes a set of gates in order.
 type Runner struct {
 	gates []Gate

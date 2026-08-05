@@ -372,3 +372,20 @@ func nonEmptyLines(s string) []string {
 	}
 	return out
 }
+
+// Expectation statements, so the implement prompt states the bar this gate
+// set actually enforces rather than a hardcoded one.
+
+func (GoFormat) Expectation() string { return "be gofmt-clean" }
+func (GoBuild) Expectation() string  { return "compile with `go build ./...`" }
+func (GoVet) Expectation() string    { return "pass `go vet ./...`" }
+
+func (g GoTest) Expectation() string {
+	if g.MinCoverage > 0 {
+		return fmt.Sprintf("pass `go test ./... -race`, keeping every package at or above %.0f%% coverage",
+			g.MinCoverage*100)
+	}
+	return "pass `go test ./... -race`"
+}
+
+func (GolangCILint) Expectation() string { return "pass golangci-lint, if it is installed" }

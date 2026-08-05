@@ -145,7 +145,10 @@ func (l *Loader) BuildConfig() (*Config, error) {
 func (l *Loader) validate() error {
 	// Validate project configuration
 	projectType := l.v.GetString("project.type")
-	validTypes := map[string]bool{"go": true, "node": true, "python": true, "rust": true}
+	validTypes := map[string]bool{
+		"go": true, "node": true, "javascript": true, "typescript": true,
+		"python": true, "rust": true,
+	}
 	if !validTypes[projectType] {
 		return fmt.Errorf("invalid project type: %s", projectType)
 	}

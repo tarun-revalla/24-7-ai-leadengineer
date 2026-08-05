@@ -287,14 +287,25 @@ func appWithConfig(t *testing.T, yaml string) *App {
 // Only Go has a gate set; committing work no gate ever checked is worse than
 // refusing to start.
 func TestExecutorRefusesUnsupportedProjectTypes(t *testing.T) {
-	a := appWithConfig(t, "project:\n  type: node\n")
+	a := appWithConfig(t, "project:\n  type: rust\n")
 
 	_, err := a.Executor()
 	if err == nil {
 		t.Fatal("a project type with no gates must not produce an executor")
 	}
-	if !strings.Contains(err.Error(), "node") {
+	if !strings.Contains(err.Error(), "rust") {
 		t.Errorf("the error should name the unsupported type: %v", err)
+	}
+}
+
+// A JavaScript or TypeScript project gets the Node gate set, under any of the
+// names someone would reasonably write in their config.
+func TestExecutorBuildsNodeGates(t *testing.T) {
+	for _, projectType := range []string{"node", "javascript", "typescript"} {
+		a := appWithConfig(t, "project:\n  type: "+projectType+"\n")
+		if _, err := a.Executor(); err != nil {
+			t.Errorf("project type %q should build an executor: %v", projectType, err)
+		}
 	}
 }
 

@@ -1,5 +1,9 @@
 ---
 entries:
+    - taskId: PHASE5-003
+      title: Quality gates for JavaScript and TypeScript
+      date: 2026-08-05T10:16:24.947147436Z
+      summary: Node gate set driven by package.json scripts; the implement prompt now states the bar the configured gates actually enforce rather than hardcoding Go.
     - taskId: PHASE4-002
       title: Review engine
       date: 2026-08-05T09:49:10.833894449Z
@@ -48,7 +52,7 @@ entries:
       title: Configuration, logging and metrics
       date: 2026-08-05T03:51:38.270551246Z
       summary: Layered config with validation, structured logging, Prometheus metrics.
-updatedAt: 2026-08-05T09:49:10.834970424Z
+updatedAt: 2026-08-05T10:16:24.94899137Z
 ---
 
 # Changelog
