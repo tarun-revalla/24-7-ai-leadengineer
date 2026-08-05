@@ -101,7 +101,15 @@ commit; the gates run again afterwards.
 //
 // The subject stays within the conventional 72 columns so git log output and
 // hosting interfaces do not truncate it mid-word.
-func BuildCommitMessage(task interfaces.BacklogTask) string {
+//
+// The trailer names the checks that actually ran rather than asserting that
+// "all quality gates passed". Those are not the same claim, and the
+// difference matters most exactly when it is smallest: a commit made in
+// inspection mode, where nothing was executed and only the diff was read,
+// must not read identically to one that compiled and tested. Someone
+// reviewing a week of unattended commits needs to see which is which from
+// the log alone.
+func BuildCommitMessage(task interfaces.BacklogTask, report *gates.Report) string {
 	subject := strings.TrimSpace(task.Title)
 	if subject == "" {
 		subject = "complete task " + task.ID
@@ -122,7 +130,37 @@ func BuildCommitMessage(task interfaces.BacklogTask) string {
 		b.WriteString(desc)
 	}
 
-	b.WriteString("\n\nAll quality gates passed before this commit.\n")
+	b.WriteString("\n\n")
+	b.WriteString(verificationTrailer(report))
+
+	return b.String()
+}
+
+// verificationTrailer states what was checked before this commit.
+func verificationTrailer(report *gates.Report) string {
+	if report == nil {
+		return "Verified-by: nothing recorded\n"
+	}
+
+	var passed, skipped []string
+	for _, r := range report.Results {
+		switch r.Status {
+		case gates.StatusPassed:
+			passed = append(passed, r.Gate)
+		case gates.StatusSkipped:
+			skipped = append(skipped, r.Gate)
+		}
+	}
+
+	var b strings.Builder
+	if len(passed) == 0 {
+		b.WriteString("Verified-by: no checks ran\n")
+	} else {
+		fmt.Fprintf(&b, "Verified-by: %s\n", strings.Join(passed, ", "))
+	}
+	if len(skipped) > 0 {
+		fmt.Fprintf(&b, "Not-checked: %s\n", strings.Join(skipped, ", "))
+	}
 
 	return b.String()
 }

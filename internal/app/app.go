@@ -47,6 +47,10 @@ type Options struct {
 	ProjectPath string
 	// ConfigFile is an optional YAML file layered over the defaults.
 	ConfigFile string
+	// Overrides are settings for this invocation only, layered above the
+	// config file. Nothing is written back: a flag changes one run, not the
+	// project's configuration.
+	Overrides map[string]any
 	// LogToStderr sends logs to the terminal instead of the configured file,
 	// which is what interactive commands want.
 	LogToStderr bool
@@ -65,7 +69,7 @@ func New(opts Options) (*App, error) {
 	}
 	projectPath = abs
 
-	cfg, err := loadConfig(projectPath, opts.ConfigFile)
+	cfg, err := loadConfig(projectPath, opts.ConfigFile, opts.Overrides)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +147,7 @@ func (a *App) StatePath(parts ...string) string {
 }
 
 // loadConfig layers an optional file and the environment over the defaults.
-func loadConfig(projectPath, configFile string) (*config.Config, error) {
+func loadConfig(projectPath, configFile string, overrides map[string]any) (*config.Config, error) {
 	loader := config.NewLoader()
 
 	if err := loader.LoadDefault(); err != nil {
@@ -167,6 +171,12 @@ func loadConfig(projectPath, configFile string) (*config.Config, error) {
 
 	if err := loader.LoadEnv(""); err != nil {
 		return nil, fmt.Errorf("failed to read environment configuration: %w", err)
+	}
+
+	// Applied last so a flag beats the file and the environment alike: the
+	// operator typing it now is the most specific statement of intent there is.
+	for key, value := range overrides {
+		loader.Set(key, value)
 	}
 
 	cfg, err := loader.BuildConfig()

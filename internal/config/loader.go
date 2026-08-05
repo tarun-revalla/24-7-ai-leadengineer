@@ -83,6 +83,10 @@ func (l *Loader) LoadDefault() error {
 	l.v.SetDefault("quality.runLinter", true)
 	l.v.SetDefault("quality.runSecurity", true)
 	l.v.SetDefault("quality.runPerformance", false)
+	// Verification by reading the diff instead of running the project's
+	// tooling. Off by default: it is a deliberate trade, not a fallback to
+	// slip into silently.
+	l.v.SetDefault("quality.inspectionOnly", false)
 
 	l.v.SetDefault("review.enabled", true)
 	l.v.SetDefault("review.maxRevisions", 2)
@@ -126,6 +130,14 @@ func (l *Loader) LoadEnv(prefix string) error {
 	l.v.AutomaticEnv()
 
 	return nil
+}
+
+// Set overrides one setting for this process only.
+//
+// Nothing is written back to any file. This exists for command-line flags,
+// which change a single run rather than the project's configuration.
+func (l *Loader) Set(key string, value any) {
+	l.v.Set(key, value)
 }
 
 // BuildConfig builds the final configuration from all loaded sources.

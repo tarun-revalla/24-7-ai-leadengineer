@@ -7,12 +7,17 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/app"
+	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/toolchain"
 )
 
 // globalFlags are shared by every command.
 type globalFlags struct {
 	projectPath string
 	configFile  string
+	// overrides are settings a command-line flag sets for this invocation
+	// only. They sit above the config file, so a flag wins over a file that
+	// says otherwise, and nothing is written back to disk.
+	overrides map[string]any
 }
 
 // NewRootCommand creates the root CLI command.
@@ -46,6 +51,7 @@ func NewRootCommand(version, commit, date string) *cobra.Command {
 		newQuotaCommand(flags),
 		newStartCommand(flags),
 		newRecoverCommand(flags),
+		newDetectCommand(flags),
 	)
 
 	return cmd
@@ -57,12 +63,14 @@ func (f *globalFlags) open() (*app.App, error) {
 		ProjectPath: f.projectPath,
 		ConfigFile:  f.configFile,
 		LogToStderr: true,
+		Overrides:   f.overrides,
 	})
 }
 
 func newStartCommand(flags *globalFlags) *cobra.Command {
 	var maxTasks int
 	var once bool
+	var inspectOnly bool
 
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -73,6 +81,10 @@ func newStartCommand(flags *globalFlags) *cobra.Command {
 			"be clean before a task starts, so a commit cannot include unrelated work.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if inspectOnly {
+				flags.overrides = map[string]any{"quality.inspectionOnly": true}
+			}
+
 			a, err := flags.open()
 			if err != nil {
 				return err
@@ -84,6 +96,17 @@ func newStartCommand(flags *globalFlags) *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
+
+			if a.InspectionMode() {
+				// Stated at the top of the run, not buried at the end: this
+				// changes what the resulting commits mean, and someone
+				// reading the output should know before they read results.
+				_, _ = fmt.Fprint(out,
+					"Inspection mode: no project tooling will run. Changes are checked by\n"+
+						"reading the diff, which cannot establish that the code compiles or\n"+
+						"that tests pass. Commits record what was actually checked.\n\n")
+			}
+
 			outcomes, runErr := a.RunLoop(cmd.Context(), maxTasks)
 
 			for _, o := range outcomes {
@@ -131,6 +154,8 @@ func newStartCommand(flags *globalFlags) *cobra.Command {
 
 	cmd.Flags().IntVar(&maxTasks, "max-tasks", 0, "stop after this many tasks (0 for no limit)")
 	cmd.Flags().BoolVar(&once, "once", false, "run a single task and stop")
+	cmd.Flags().BoolVar(&inspectOnly, "inspect-only", false,
+		"skip the project's tooling; check changes by reading the diff instead")
 
 	return cmd
 }
@@ -181,3 +206,35 @@ func newRecoverCommand(flags *globalFlags) *cobra.Command {
 // look at, distinct from a normal command failure — the report itself already
 // explains what and why.
 var errNeedsAttention = errors.New("interrupted work needs attention before it can resume")
+
+func newDetectCommand(flags *globalFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "detect",
+		Short: "Work out how this project verifies itself",
+		Long: "Reads the repository — its manifests, build files and CI configuration —\n" +
+			"and records the commands that must pass before a change is committed.\n\n" +
+			"This is what makes the system language-agnostic. Nothing about any\n" +
+			"particular language is compiled in: if a project can be checked by\n" +
+			"running a command, it can be worked on. The result is written to\n" +
+			".ai/TOOLCHAIN.md, which you can edit by hand at any time.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := flags.open()
+			if err != nil {
+				return err
+			}
+			defer func() { _ = a.Close() }()
+
+			detected, err := a.DetectToolchain(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			out := cmd.OutOrStdout()
+			_, _ = fmt.Fprint(out, toolchain.Render(detected))
+			_, _ = fmt.Fprintln(out, "\nRecorded in .ai/TOOLCHAIN.md. Edit it if anything looks wrong.")
+
+			return nil
+		},
+	}
+}

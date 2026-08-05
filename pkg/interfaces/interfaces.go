@@ -57,6 +57,7 @@ type Memory interface {
 	GetCurrent(ctx context.Context) (*CurrentTask, error)
 	GetChangelog(ctx context.Context) (*Changelog, error)
 	GetDecisions(ctx context.Context) ([]Decision, error)
+	GetToolchain(ctx context.Context) (*Toolchain, error)
 	ReadFile(ctx context.Context, name string) (string, error)
 
 	// Write operations
@@ -65,10 +66,36 @@ type Memory interface {
 	SaveCurrent(ctx context.Context, current *CurrentTask) error
 	SaveChangelog(ctx context.Context, changelog *Changelog) error
 	SaveDecision(ctx context.Context, decision Decision) error
+	SaveToolchain(ctx context.Context, t *Toolchain) error
 	WriteFile(ctx context.Context, name string, content string) error
 
 	// Sync
 	SyncWithClaude(ctx context.Context) error
+}
+
+// Toolchain is how a project verifies itself: the commands that prove a
+// change is sound. Held as project state rather than compiled into the
+// system, so supporting a new language is a matter of describing it rather
+// than of releasing a new binary.
+type Toolchain struct {
+	// Language is what was detected, for the operator's benefit. The gates
+	// are what actually run; this does not select them.
+	Language string `yaml:"language,omitempty"`
+	// DetectedAt records when this was last worked out.
+	DetectedAt time.Time `yaml:"detectedAt,omitempty"`
+	// Gates are the checks a change must pass, in the order they run.
+	Gates []ToolchainGate `yaml:"gates"`
+}
+
+// ToolchainGate is one declared quality check.
+type ToolchainGate struct {
+	Name        string   `yaml:"name"`
+	Command     []string `yaml:"command"`
+	Required    bool     `yaml:"required"`
+	Expectation string   `yaml:"expectation,omitempty"`
+	// SkipIfMissing names the tool whose absence makes this a skip rather
+	// than a run. Defaults to the command's first word.
+	SkipIfMissing string `yaml:"skipIfMissing,omitempty"`
 }
 
 // ProjectMetadata contains high-level project information.

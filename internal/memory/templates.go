@@ -75,3 +75,25 @@ func EmptyDecisionsDocument() string {
 	}
 	return rendered
 }
+
+const defaultToolchainBody = `# Toolchain
+
+How this project verifies itself. The gates below are the commands that must
+pass before any change is committed.
+
+This file is what makes the system language-agnostic: nothing about Rust,
+Python, Elixir or a polyglot monorepo is compiled into the binary. If a
+project can be checked by running a command, it can be gated here.
+
+Run ` + "`leadengineer detect`" + ` to have this worked out from the repository, or
+edit it by hand — a project's own contributors usually know the answer already.
+
+Each gate takes:
+
+- **name** — what it is called in reports
+- **command** — argv, run from the repository root. Not passed through a
+  shell, so arguments containing spaces cannot change what executes.
+- **required** — whether a missing tool blocks or is recorded as a skip
+- **expectation** — one sentence telling the implementer what this asks of a
+  change, carried into the prompt so the bar is stated rather than guessed
+`

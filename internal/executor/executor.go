@@ -238,7 +238,7 @@ func (e *Executor) Run(ctx context.Context, task interfaces.BacklogTask) (*Outco
 	}
 
 	if e.cfg.AutoCommit {
-		hash, err := e.commit(ctx, task)
+		hash, err := e.commit(ctx, task, outcome.Report)
 		if err != nil {
 			return e.fail(ctx, task, outcome, started, err)
 		}
@@ -536,7 +536,7 @@ func (e *Executor) reviewAndRevise(ctx context.Context, task interfaces.BacklogT
 }
 
 // commit stages and commits the task's work.
-func (e *Executor) commit(ctx context.Context, task interfaces.BacklogTask) (string, error) {
+func (e *Executor) commit(ctx context.Context, task interfaces.BacklogTask, report *gates.Report) (string, error) {
 	if err := e.updateStage(ctx, task, StageCommitting, 0.9); err != nil {
 		return "", err
 	}
@@ -557,7 +557,7 @@ func (e *Executor) commit(ctx context.Context, task interfaces.BacklogTask) (str
 		return "", fmt.Errorf("failed to stage changes: %w", err)
 	}
 
-	hash, err := e.git.Commit(ctx, BuildCommitMessage(task))
+	hash, err := e.git.Commit(ctx, BuildCommitMessage(task, report))
 	if err != nil {
 		return "", fmt.Errorf("failed to commit: %w", err)
 	}

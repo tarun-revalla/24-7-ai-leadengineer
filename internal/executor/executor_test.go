@@ -388,8 +388,12 @@ func TestCommitMessageNamesTheTask(t *testing.T) {
 	if !strings.HasPrefix(msg, "T-42: ") {
 		t.Errorf("commit subject should name the task: %q", msg)
 	}
-	if !strings.Contains(msg, "quality gates passed") {
-		t.Errorf("commit should record that gates passed: %q", msg)
+	// The trailer names the checks that actually ran rather than asserting
+	// that "all gates passed", so a commit made in inspection mode — where
+	// nothing executed — cannot read identically to one that compiled and
+	// tested.
+	if !strings.Contains(msg, "Verified-by: test") {
+		t.Errorf("commit should record which checks ran: %q", msg)
 	}
 }
 
@@ -774,5 +778,60 @@ func TestNilMetricsIsSafe(t *testing.T) {
 
 	if _, err := h.exec.Run(context.Background(), sampleTask("T-1", 1)); err != nil {
 		t.Fatalf("a run without metrics should still succeed: %v", err)
+	}
+}
+
+// A commit made where nothing executed must not read identically to one that
+// compiled and tested. Someone reviewing a week of unattended commits needs to
+// tell them apart from the log alone.
+func TestCommitTrailerDistinguishesWhatActuallyRan(t *testing.T) {
+	task := sampleTask("T-1", 1)
+
+	full := BuildCommitMessage(task, &gates.Report{Results: []gates.Result{
+		{Gate: "build", Status: gates.StatusPassed},
+		{Gate: "test", Status: gates.StatusPassed},
+	}})
+	if !strings.Contains(full, "Verified-by: build, test") {
+		t.Errorf("a verified commit should name its checks:\n%s", full)
+	}
+
+	inspected := BuildCommitMessage(task, &gates.Report{Results: []gates.Result{
+		{Gate: "secrets", Status: gates.StatusPassed},
+	}})
+	if !strings.Contains(inspected, "Verified-by: secrets") {
+		t.Errorf("an inspection-mode commit should say only secrets ran:\n%s", inspected)
+	}
+	if strings.Contains(inspected, "build") || strings.Contains(inspected, "test") {
+		t.Errorf("it must not claim checks that did not run:\n%s", inspected)
+	}
+}
+
+// A skipped gate is a gap, and a gap the reader cannot see is worse than one
+// they can.
+func TestCommitTrailerNamesSkippedGates(t *testing.T) {
+	msg := BuildCommitMessage(sampleTask("T-1", 1), &gates.Report{Results: []gates.Result{
+		{Gate: "build", Status: gates.StatusPassed},
+		{Gate: "lint", Status: gates.StatusSkipped, Detail: "not installed"},
+	}})
+
+	if !strings.Contains(msg, "Not-checked: lint") {
+		t.Errorf("a skipped gate should be recorded:\n%s", msg)
+	}
+}
+
+func TestCommitTrailerWithNoReport(t *testing.T) {
+	msg := BuildCommitMessage(sampleTask("T-1", 1), nil)
+	if !strings.Contains(msg, "Verified-by:") {
+		t.Errorf("the trailer should always be present:\n%s", msg)
+	}
+	if strings.Contains(msg, "passed") {
+		t.Errorf("a missing report must not imply anything passed:\n%s", msg)
+	}
+}
+
+func TestCommitTrailerWhenNothingPassed(t *testing.T) {
+	msg := BuildCommitMessage(sampleTask("T-1", 1), &gates.Report{})
+	if !strings.Contains(msg, "no checks ran") {
+		t.Errorf("an empty report must say so plainly:\n%s", msg)
 	}
 }

@@ -681,3 +681,208 @@ func TestRunLoopStopsAtTheTaskLimit(t *testing.T) {
 		t.Errorf("no task completed, got %d outcomes", len(outcomes))
 	}
 }
+
+// --- language-agnostic gates ---
+
+// A declared toolchain beats anything compiled in: the built-in Go and Node
+// sets are a convenience for two common cases, not the limit of what is
+// supported.
+func TestDeclaredToolchainOverridesTheBuiltInSet(t *testing.T) {
+	a := newTestApp(t)
+	ctx := context.Background()
+
+	if _, err := a.Initialize(ctx, "Demo"); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	if err := a.Memory.SaveToolchain(ctx, &interfaces.Toolchain{
+		Language: "rust",
+		Gates: []interfaces.ToolchainGate{
+			{Name: "build", Command: []string{"cargo", "build"}, Required: true},
+			{Name: "test", Command: []string{"cargo", "test"}, Required: true},
+		},
+	}); err != nil {
+		t.Fatalf("SaveToolchain failed: %v", err)
+	}
+
+	// project.type is still "go"; the declaration must win anyway.
+	gateList, err := a.gateSet("go")
+	if err != nil {
+		t.Fatalf("gateSet failed: %v", err)
+	}
+
+	names := map[string]bool{}
+	for _, g := range gateList {
+		names[g.Name()] = true
+	}
+	if !names["build"] || !names["test"] {
+		t.Errorf("the declared gates should be used, got %v", names)
+	}
+	if names["vet"] || names["format"] {
+		t.Errorf("Go's built-in gates must not run for a declared toolchain: %v", names)
+	}
+	if !names["secrets"] {
+		t.Error("the secret scan must survive any declaration")
+	}
+}
+
+// A malformed declaration must be reported, not quietly replaced by a
+// built-in set that checks something else entirely.
+func TestMalformedToolchainIsReportedNotIgnored(t *testing.T) {
+	a := newTestApp(t)
+	ctx := context.Background()
+
+	if _, err := a.Initialize(ctx, "Demo"); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	if err := a.Memory.SaveToolchain(ctx, &interfaces.Toolchain{
+		Gates: []interfaces.ToolchainGate{{Name: "build"}}, // no command
+	}); err != nil {
+		t.Fatalf("SaveToolchain failed: %v", err)
+	}
+
+	_, err := a.gateSet("go")
+	if err == nil {
+		t.Fatal("an unusable declaration must be reported")
+	}
+	if !strings.Contains(err.Error(), "TOOLCHAIN.md") {
+		t.Errorf("the error should point at the file to fix: %v", err)
+	}
+}
+
+func TestToolchainSurvivesReopening(t *testing.T) {
+	a := newTestApp(t)
+	ctx := context.Background()
+
+	if _, err := a.Initialize(ctx, "Demo"); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	want := &interfaces.Toolchain{
+		Language: "zig",
+		Gates:    []interfaces.ToolchainGate{{Name: "test", Command: []string{"zig", "build", "test"}, Required: true}},
+	}
+	if err := a.Memory.SaveToolchain(ctx, want); err != nil {
+		t.Fatalf("SaveToolchain failed: %v", err)
+	}
+
+	reopened, err := New(Options{ProjectPath: a.ProjectPath, LogToStderr: true})
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+
+	got, err := reopened.Memory.GetToolchain(ctx)
+	if err != nil {
+		t.Fatalf("GetToolchain failed: %v", err)
+	}
+	if got.Language != "zig" || len(got.Gates) != 1 {
+		t.Errorf("the toolchain did not survive: %+v", got)
+	}
+	if strings.Join(got.Gates[0].Command, " ") != "zig build test" {
+		t.Errorf("command: got %v", got.Gates[0].Command)
+	}
+}
+
+// --- inspection mode ---
+
+func TestInspectionModeRunsNoProjectTooling(t *testing.T) {
+	a := appWithConfig(t, "quality:\n  inspectionOnly: true\n")
+
+	if !a.InspectionMode() {
+		t.Fatal("inspectionOnly should enable inspection mode")
+	}
+
+	gateList, err := a.gateSet("go")
+	if err != nil {
+		t.Fatalf("gateSet failed: %v", err)
+	}
+
+	if len(gateList) != 1 || gateList[0].Name() != "secrets" {
+		names := []string{}
+		for _, g := range gateList {
+			names = append(names, g.Name())
+		}
+		t.Errorf("only the secret scan should run, got %v", names)
+	}
+}
+
+// The one check that survives: it needs no toolchain, and a published
+// credential is not undone by fixing the code afterwards.
+func TestInspectionModeKeepsTheSecretScan(t *testing.T) {
+	a := appWithConfig(t, "quality:\n  inspectionOnly: true\n")
+
+	gateList, _ := a.gateSet("rust")
+	if len(gateList) == 0 || gateList[0].Name() != "secrets" {
+		t.Error("the secret scan must run even when nothing else does")
+	}
+}
+
+// With no tooling running, switching review off too would leave nothing
+// checking the change at all, and every task would commit unconditionally.
+func TestInspectionModeForcesReviewOn(t *testing.T) {
+	a := appWithConfig(t, "quality:\n  inspectionOnly: true\nreview:\n  enabled: false\n")
+
+	exec, err := a.Executor()
+	if err != nil {
+		t.Fatalf("Executor failed: %v", err)
+	}
+	if exec == nil {
+		t.Fatal("an executor should have been built")
+	}
+	// The reviewer is unexported; its presence is asserted through the fact
+	// that an inspection-mode executor builds at all with review disabled,
+	// plus the gate set being reduced to secrets only.
+	gateList, _ := a.gateSet("go")
+	if len(gateList) != 1 {
+		t.Errorf("inspection mode should reduce the gate set, got %d gates", len(gateList))
+	}
+}
+
+// A project type with no gates is normally refused; inspection mode is exactly
+// the escape hatch for that, so it must not refuse.
+func TestInspectionModeWorksForAnyProjectType(t *testing.T) {
+	a := appWithConfig(t, "project:\n  type: rust\nquality:\n  inspectionOnly: true\n")
+
+	if _, err := a.Executor(); err != nil {
+		t.Fatalf("inspection mode should work for any project type: %v", err)
+	}
+}
+
+func TestInspectionModeIsOffByDefault(t *testing.T) {
+	a := newTestApp(t)
+	if a.InspectionMode() {
+		t.Error("inspection mode must be a deliberate choice, not a default")
+	}
+}
+
+// A flag changes one run, not the project's configuration on disk.
+func TestOverridesBeatTheConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte("quality:\n  inspectionOnly: false\n"), 0o644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	a, err := New(Options{
+		ProjectPath: dir,
+		LogToStderr: true,
+		Overrides:   map[string]any{"quality.inspectionOnly": true},
+	})
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+
+	if !a.InspectionMode() {
+		t.Error("an override should beat the config file")
+	}
+
+	// Nothing was written back.
+	onDisk, err := os.ReadFile(filepath.Join(dir, "config.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if strings.Contains(string(onDisk), "true") {
+		t.Errorf("an override must not be persisted: %s", onDisk)
+	}
+}

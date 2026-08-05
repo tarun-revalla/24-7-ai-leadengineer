@@ -106,6 +106,33 @@ func (m *Manager) GetDecisions(ctx context.Context) ([]interfaces.Decision, erro
 	return m.decisions()
 }
 
+// GetToolchain returns how this project verifies itself.
+//
+// A project that has never been detected has no TOOLCHAIN.md, which is not an
+// error: the caller decides whether to fall back to a built-in gate set or to
+// run detection.
+func (m *Manager) GetToolchain(ctx context.Context) (*interfaces.Toolchain, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	t := &interfaces.Toolchain{}
+	if err := m.readMeta("TOOLCHAIN.md", t); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// SaveToolchain records how this project verifies itself.
+func (m *Manager) SaveToolchain(ctx context.Context, t *interfaces.Toolchain) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if t == nil {
+		return errors.New("toolchain cannot be nil")
+	}
+	return m.writeMeta("TOOLCHAIN.md", t, defaultToolchainBody)
+}
+
 // ReadFile reads an arbitrary file from the .ai directory.
 func (m *Manager) ReadFile(ctx context.Context, name string) (string, error) {
 	m.mu.RLock()
