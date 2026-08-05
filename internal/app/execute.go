@@ -8,6 +8,7 @@ import (
 
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/executor"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/gates"
+	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/review"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/pkg/interfaces"
 )
 
@@ -39,8 +40,17 @@ func (a *App) Executor() (*executor.Executor, error) {
 
 	cfg := executor.Config{
 		MaxRepairAttempts: a.Config.GetInt("claude.maxRetries"),
+		MaxReviewAttempts: a.Config.GetInt("review.maxRevisions"),
 		AutoCommit:        a.Config.GetBool("tasks.autoCommit"),
 		ProjectPath:       a.ProjectPath,
+	}
+
+	// A nil reviewer disables the stage. The interface must be left nil rather
+	// than set to a typed nil, which would satisfy the interface and then
+	// panic on the first call.
+	var reviewer executor.Reviewer
+	if a.Config.GetBool("review.enabled") {
+		reviewer = review.New(claudeReviewSession{a.Claude})
 	}
 
 	return executor.New(
@@ -50,8 +60,23 @@ func (a *App) Executor() (*executor.Executor, error) {
 		a.Memory,
 		a.Checkpoints,
 		gates.NewRunner(gateList...),
+		reviewer,
 		a.Logger,
 	), nil
+}
+
+// claudeReviewSession adapts the session manager to the narrow interface the
+// review package needs, so review does not depend on the full session type.
+type claudeReviewSession struct {
+	claude interfaces.ClaudeSessionManager
+}
+
+func (c claudeReviewSession) LaunchSession(ctx context.Context, prompt string) (*review.Response, error) {
+	result, err := c.claude.LaunchSession(ctx, prompt)
+	if err != nil {
+		return nil, err
+	}
+	return &review.Response{Output: result.Output, Errors: result.Errors}, nil
 }
 
 // RunNextTask executes the highest-priority open task.

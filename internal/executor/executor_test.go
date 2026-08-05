@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/gates"
+	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/review"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/pkg/interfaces"
 )
 
@@ -16,9 +17,22 @@ type harness struct {
 	git         *fakeGit
 	memory      *fakeMemory
 	checkpoints *fakeCheckpoints
+	reviewer    *fakeReviewer
 }
 
+// newHarness builds an executor with review disabled, so the many tests
+// covering the gate pipeline are unaffected by the review stage.
 func newHarness(t *testing.T, gateList []gates.Gate, tasks ...interfaces.BacklogTask) *harness {
+	t.Helper()
+	return newHarnessWithReviewer(t, gateList, nil, tasks...)
+}
+
+func newHarnessWithReviewer(
+	t *testing.T,
+	gateList []gates.Gate,
+	reviewer *fakeReviewer,
+	tasks ...interfaces.BacklogTask,
+) *harness {
 	t.Helper()
 
 	h := &harness{
@@ -26,16 +40,25 @@ func newHarness(t *testing.T, gateList []gates.Gate, tasks ...interfaces.Backlog
 		git:         newFakeGit(),
 		memory:      newFakeMemory(tasks...),
 		checkpoints: &fakeCheckpoints{},
+		reviewer:    reviewer,
 	}
 
 	// The executor's own actions dirty the tree, so a passing run needs
 	// something to commit.
 	h.claude.onCall = func(int) { h.git.setDirty() }
 
+	// A nil *fakeReviewer must be passed as a nil interface, not an interface
+	// holding a nil pointer, or the "review disabled" branch never fires.
+	var rev Reviewer
+	if reviewer != nil {
+		rev = reviewer
+	}
+
 	h.exec = New(
-		Config{MaxRepairAttempts: 2, AutoCommit: true, ProjectPath: t.TempDir()},
+		Config{MaxRepairAttempts: 2, MaxReviewAttempts: 2, AutoCommit: true, ProjectPath: t.TempDir()},
 		h.claude, h.git, h.memory, h.checkpoints,
 		gates.NewRunner(gateList...),
+		rev,
 		discardLogger{},
 	)
 
@@ -443,5 +466,202 @@ func TestUserChangesStillBlockStart(t *testing.T) {
 	_, err := h.exec.Run(context.Background(), sampleTask("T-1", 1))
 	if !errors.Is(err, ErrDirtyTree) {
 		t.Fatalf("got %v, want ErrDirtyTree when real work is uncommitted", err)
+	}
+}
+
+// --- self-review stage ---
+
+func TestReviewApprovalAllowsCommit(t *testing.T) {
+	rev := &fakeReviewer{}
+	h := newHarnessWithReviewer(t, []gates.Gate{passingGate()}, rev, sampleTask("T-1", 1))
+
+	outcome, err := h.exec.Run(context.Background(), sampleTask("T-1", 1))
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if !outcome.Committed {
+		t.Error("an approved change should commit")
+	}
+	if outcome.Revisions != 0 {
+		t.Errorf("revisions: got %d, want 0", outcome.Revisions)
+	}
+	if outcome.Review == nil || !outcome.Review.Approved {
+		t.Errorf("the outcome should carry the approving review: %+v", outcome.Review)
+	}
+}
+
+// The central safety property of the review stage, matching the gates':
+// rejected work must never reach history.
+func TestRejectedReviewNeverCommits(t *testing.T) {
+	rev := &fakeReviewer{rejectUntil: 1000}
+	h := newHarnessWithReviewer(t, []gates.Gate{passingGate()}, rev, sampleTask("T-1", 1))
+
+	outcome, err := h.exec.Run(context.Background(), sampleTask("T-1", 1))
+	if !errors.Is(err, ErrReviewRejected) {
+		t.Fatalf("got %v, want ErrReviewRejected", err)
+	}
+
+	if outcome.Committed || h.git.commitCount() != 0 {
+		t.Fatal("work the reviewer rejected was committed")
+	}
+	if got := h.memory.taskStatus("T-1"); got != "blocked" {
+		t.Errorf("task status: got %q, want blocked", got)
+	}
+	if entries := h.memory.changelogEntries(); len(entries) != 0 {
+		t.Errorf("rejected work must not appear in the changelog: %+v", entries)
+	}
+}
+
+func TestReviewRevisionLoopRetriesUntilApproved(t *testing.T) {
+	rev := &fakeReviewer{rejectUntil: 1}
+	h := newHarnessWithReviewer(t, []gates.Gate{passingGate()}, rev, sampleTask("T-1", 1))
+
+	outcome, err := h.exec.Run(context.Background(), sampleTask("T-1", 1))
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if outcome.Revisions != 1 {
+		t.Errorf("revisions: got %d, want 1", outcome.Revisions)
+	}
+	if !outcome.Committed {
+		t.Error("the change should commit once the reviewer approves")
+	}
+	if rev.count() != 2 {
+		t.Errorf("review calls: got %d, want 2", rev.count())
+	}
+}
+
+func TestReviewRevisionsAreBounded(t *testing.T) {
+	rev := &fakeReviewer{rejectUntil: 1000}
+	h := newHarnessWithReviewer(t, []gates.Gate{passingGate()}, rev, sampleTask("T-1", 1))
+
+	outcome, _ := h.exec.Run(context.Background(), sampleTask("T-1", 1))
+
+	if outcome.Revisions != 2 {
+		t.Errorf("revisions: got %d, want the configured limit of 2", outcome.Revisions)
+	}
+	// The initial review plus one after each of the two revisions.
+	if rev.count() != 3 {
+		t.Errorf("review calls: got %d, want 3", rev.count())
+	}
+}
+
+func TestZeroReviewAttemptsMakesFirstRejectionFinal(t *testing.T) {
+	rev := &fakeReviewer{rejectUntil: 1000}
+	h := newHarnessWithReviewer(t, []gates.Gate{passingGate()}, rev, sampleTask("T-1", 1))
+	h.exec.cfg.MaxReviewAttempts = 0
+
+	outcome, err := h.exec.Run(context.Background(), sampleTask("T-1", 1))
+	if !errors.Is(err, ErrReviewRejected) {
+		t.Fatalf("got %v, want ErrReviewRejected", err)
+	}
+	if outcome.Revisions != 0 {
+		t.Errorf("revisions: got %d, want 0", outcome.Revisions)
+	}
+	if rev.count() != 1 {
+		t.Errorf("review calls: got %d, want 1", rev.count())
+	}
+}
+
+// A review that could not be read is not an approval. Committing here would
+// defeat the stage entirely.
+func TestUnreadableReviewBlocksTheCommit(t *testing.T) {
+	rev := &fakeReviewer{unparseable: true}
+	h := newHarnessWithReviewer(t, []gates.Gate{passingGate()}, rev, sampleTask("T-1", 1))
+
+	outcome, err := h.exec.Run(context.Background(), sampleTask("T-1", 1))
+	if err == nil {
+		t.Fatal("an unreadable review must stop the run")
+	}
+	if outcome.Committed || h.git.commitCount() != 0 {
+		t.Error("nothing should be committed when the review could not be read")
+	}
+}
+
+func TestReviewSessionFailureBlocksTheCommit(t *testing.T) {
+	rev := &fakeReviewer{err: errors.New("claude crashed")}
+	h := newHarnessWithReviewer(t, []gates.Gate{passingGate()}, rev, sampleTask("T-1", 1))
+
+	_, err := h.exec.Run(context.Background(), sampleTask("T-1", 1))
+	if err == nil {
+		t.Fatal("a failed review must stop the run")
+	}
+	if h.git.commitCount() != 0 {
+		t.Error("nothing should be committed when the review failed to run")
+	}
+}
+
+// A revision fixes the reviewer's finding but can break the build doing it.
+// Re-running the gates after each revision is what stops that reaching a
+// commit.
+func TestRevisionIsReverifiedByTheGates(t *testing.T) {
+	// Passes initially, then fails on the run after the revision.
+	gate := &scriptedGate{name: "test"}
+	rev := &fakeReviewer{rejectUntil: 1}
+	h := newHarnessWithReviewer(t, []gates.Gate{gate}, rev, sampleTask("T-1", 1))
+
+	if _, err := h.exec.Run(context.Background(), sampleTask("T-1", 1)); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	// One verification before the review, one after the revision.
+	if gate.runCount() < 2 {
+		t.Errorf("gate runs: got %d; the gates must re-run after a revision", gate.runCount())
+	}
+}
+
+func TestReviewReceivesTheActualDiff(t *testing.T) {
+	rev := &fakeReviewer{}
+	h := newHarnessWithReviewer(t, []gates.Gate{passingGate()}, rev, sampleTask("T-1", 1))
+
+	if _, err := h.exec.Run(context.Background(), sampleTask("T-1", 1)); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if !strings.Contains(rev.diffAt(0), "the change") {
+		t.Errorf("the reviewer must see the change, got %q", rev.diffAt(0))
+	}
+}
+
+// Review is optional; without one the gates remain the barrier to a commit.
+func TestNilReviewerSkipsTheStage(t *testing.T) {
+	h := newHarness(t, []gates.Gate{passingGate()}, sampleTask("T-1", 1))
+
+	outcome, err := h.exec.Run(context.Background(), sampleTask("T-1", 1))
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if !outcome.Committed {
+		t.Error("a run without a reviewer should still commit on passing gates")
+	}
+	if outcome.Review != nil {
+		t.Errorf("no review should be recorded when the stage is disabled: %+v", outcome.Review)
+	}
+}
+
+func TestReviewRepairPromptCarriesTheFindings(t *testing.T) {
+	rev := &fakeReviewer{
+		rejectUntil: 1,
+		blocking: []review.Finding{{
+			Perspective: review.PerspectiveSecurity,
+			Severity:    review.SeverityCritical,
+			Description: "the token is written to the log",
+		}},
+	}
+	h := newHarnessWithReviewer(t, []gates.Gate{passingGate()}, rev, sampleTask("T-1", 1))
+
+	if _, err := h.exec.Run(context.Background(), sampleTask("T-1", 1)); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	// The implement call is first; the revision follows it.
+	revision := h.claude.promptAt(1)
+	if !strings.Contains(revision, "the token is written to the log") {
+		t.Errorf("the revision prompt must carry the finding:\n%s", revision)
+	}
+	if !strings.Contains(revision, "Do not commit") {
+		t.Errorf("the revision prompt must not authorise a commit:\n%s", revision)
 	}
 }

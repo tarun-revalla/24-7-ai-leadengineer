@@ -171,6 +171,20 @@ quality:
   # Run performance checks
   runPerformance: false
 
+# Self-Review
+# Runs after the quality gates pass and before the commit. The gates prove a
+# change builds and is tested; the review asks whether it does what the task
+# wanted and whether it introduced a problem the tools cannot see.
+review:
+  # Enable the self-review stage. Disabling it leaves the quality gates as the
+  # only barrier to a commit — sound, but blind to design and security
+  # problems that compile.
+  enabled: true
+
+  # How many times a rejected change is sent back for revision before the task
+  # is abandoned. 0 means the first rejection is final.
+  maxRevisions: 2
+
 # Recovery Configuration
 recovery:
   # Enable automatic recovery

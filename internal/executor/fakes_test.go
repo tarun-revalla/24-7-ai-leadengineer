@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/gates"
+	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/review"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/pkg/interfaces"
 )
 
@@ -132,6 +133,16 @@ func (g *fakeGit) Commit(ctx context.Context, message string) (string, error) {
 	g.commits = append(g.commits, message)
 	g.clean = true
 	return g.hash[:7], nil
+}
+
+func (g *fakeGit) Diff(ctx context.Context) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.clean {
+		return "", nil
+	}
+	return "--- a/main.go\n+++ b/main.go\n+the change\n", nil
 }
 
 func (g *fakeGit) GetLastCommit(ctx context.Context) (*interfaces.GitCommit, error) {
@@ -323,6 +334,64 @@ func (g *scriptedGate) runCount() int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.runs
+}
+
+// fakeReviewer returns scripted verdicts, optionally approving after a set
+// number of revisions so a test can model a revision succeeding.
+type fakeReviewer struct {
+	mu           sync.Mutex
+	calls        int
+	diffs        []string
+	rejectUntil  int
+	blocking     []review.Finding
+	err          error
+	unparseable  bool
+	lastApproved bool
+}
+
+func (r *fakeReviewer) Review(ctx context.Context, change review.Change) (*review.Review, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.calls++
+	r.diffs = append(r.diffs, change.Diff)
+
+	if r.err != nil {
+		return nil, r.err
+	}
+	if r.unparseable {
+		return nil, review.ErrUnparseable
+	}
+
+	if r.calls <= r.rejectUntil {
+		findings := r.blocking
+		if len(findings) == 0 {
+			findings = []review.Finding{{
+				Perspective: review.PerspectiveReviewer,
+				Severity:    review.SeverityMajor,
+				Description: "the error path is unhandled",
+			}}
+		}
+		return &review.Review{Approved: false, Findings: findings}, nil
+	}
+
+	r.lastApproved = true
+	return &review.Review{Approved: true, Summary: "looks right"}, nil
+}
+
+func (r *fakeReviewer) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.calls
+}
+
+func (r *fakeReviewer) diffAt(i int) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if i >= len(r.diffs) {
+		return ""
+	}
+	return r.diffs[i]
 }
 
 // discardLogger swallows log output.

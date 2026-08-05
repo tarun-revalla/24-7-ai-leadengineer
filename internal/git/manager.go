@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -178,6 +179,70 @@ func splitLines(out string) []string {
 		return nil
 	}
 	return strings.Split(trimmed, "\n")
+}
+
+// maxDiffSize bounds how much diff text Diff assembles. A reviewer reading
+// this as prompt context needs the actual change, not an unbounded amount of
+// it — a task large enough to hit this limit has already broken the "change
+// only what this task requires" rule the implement prompt asks for.
+const maxDiffSize = 300_000
+
+// Diff renders the repository's uncommitted changes as a unified diff,
+// tracked and untracked files alike, for a caller that only sees text (a
+// reviewer, a log). It reflects the working tree against the last commit
+// regardless of staging state, since nothing may be staged yet at the point
+// this is typically called.
+func (m *Manager) Diff(ctx context.Context) (string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var b strings.Builder
+
+	tracked, err := m.execGit(ctx, "diff", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("failed to diff tracked changes: %w", err)
+	}
+	b.WriteString(tracked)
+
+	untracked, err := m.execGit(ctx, "ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return "", fmt.Errorf("failed to list untracked files: %w", err)
+	}
+
+	for _, path := range splitLines(untracked) {
+		if b.Len() > maxDiffSize {
+			break
+		}
+		// A file git can't diff (binary, unreadable) is skipped rather than
+		// failing the whole diff over one file a reviewer couldn't read either.
+		diff, err := m.diffNoIndex(ctx, path)
+		if err == nil {
+			b.WriteString(diff)
+		}
+	}
+
+	out := b.String()
+	if len(out) > maxDiffSize {
+		out = out[:maxDiffSize] + "\n... diff truncated ...\n"
+	}
+	return out, nil
+}
+
+// diffNoIndex renders a new, untracked file as a diff against /dev/null.
+// git exits 1 when --no-index finds a difference — the expected outcome for
+// every real file here — so only a higher exit status is a genuine failure.
+func (m *Manager) diffNoIndex(ctx context.Context, path string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--no-color", "--", "/dev/null", path)
+	cmd.Dir = m.projectPath
+
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() > 1 {
+			return "", fmt.Errorf("failed to diff %s: %w", path, err)
+		}
+	}
+	return string(out), nil
 }
 
 // GetLastCommit returns the latest commit.

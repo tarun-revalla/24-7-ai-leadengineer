@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tarun-revalla/24-7-ai-leadengineer/pkg/interfaces"
@@ -384,5 +385,101 @@ func TestManagerMultipleCommits(t *testing.T) {
 	commits, _ := m.GetCommitHistory(context.Background(), 10)
 	if len(commits) < 3 {
 		t.Errorf("Should have at least 3 commits, got %d", len(commits))
+	}
+}
+
+func TestDiffIncludesTrackedModifications(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+	m := New(tmpDir, "Test User", "test@example.com", true, 3)
+
+	path := filepath.Join(tmpDir, "tracked.txt")
+	os.WriteFile(path, []byte("original\n"), 0644)
+	m.Stage(context.Background(), []string{"tracked.txt"})
+	m.Commit(context.Background(), "add tracked file")
+
+	os.WriteFile(path, []byte("modified\n"), 0644)
+
+	diff, err := m.Diff(context.Background())
+	if err != nil {
+		t.Fatalf("Diff failed: %v", err)
+	}
+
+	if !strings.Contains(diff, "tracked.txt") {
+		t.Errorf("diff should name the changed file:\n%s", diff)
+	}
+	if !strings.Contains(diff, "+modified") {
+		t.Errorf("diff should show the new content:\n%s", diff)
+	}
+}
+
+// An untracked file is the most common shape of a new task's work, so a diff
+// that omitted it would hide most of what a reviewer needs to see.
+func TestDiffIncludesUntrackedFiles(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+	m := New(tmpDir, "Test User", "test@example.com", true, 3)
+
+	os.WriteFile(filepath.Join(tmpDir, "brand_new.go"), []byte("package main\n"), 0644)
+
+	diff, err := m.Diff(context.Background())
+	if err != nil {
+		t.Fatalf("Diff failed: %v", err)
+	}
+
+	if !strings.Contains(diff, "brand_new.go") {
+		t.Errorf("diff should include untracked files:\n%s", diff)
+	}
+	if !strings.Contains(diff, "package main") {
+		t.Errorf("diff should show the untracked file's content:\n%s", diff)
+	}
+}
+
+func TestDiffIgnoresGitignoredFiles(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+	m := New(tmpDir, "Test User", "test@example.com", true, 3)
+
+	os.WriteFile(filepath.Join(tmpDir, ".gitignore"), []byte("build/\n"), 0644)
+	os.MkdirAll(filepath.Join(tmpDir, "build"), 0755)
+	os.WriteFile(filepath.Join(tmpDir, "build", "artifact.bin"), []byte("output"), 0644)
+
+	diff, err := m.Diff(context.Background())
+	if err != nil {
+		t.Fatalf("Diff failed: %v", err)
+	}
+
+	if strings.Contains(diff, "artifact.bin") {
+		t.Errorf("ignored files must not appear in the diff:\n%s", diff)
+	}
+}
+
+func TestDiffOnCleanTreeIsEmpty(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+	m := New(tmpDir, "Test User", "test@example.com", true, 3)
+
+	diff, err := m.Diff(context.Background())
+	if err != nil {
+		t.Fatalf("Diff failed: %v", err)
+	}
+	if strings.TrimSpace(diff) != "" {
+		t.Errorf("a clean tree should produce an empty diff, got:\n%s", diff)
+	}
+}
+
+func TestDiffTruncatesOversizedOutput(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+	m := New(tmpDir, "Test User", "test@example.com", true, 3)
+
+	huge := strings.Repeat("a line of source code\n", maxDiffSize/20)
+	os.WriteFile(filepath.Join(tmpDir, "huge.txt"), []byte(huge), 0644)
+
+	diff, err := m.Diff(context.Background())
+	if err != nil {
+		t.Fatalf("Diff failed: %v", err)
+	}
+
+	if len(diff) > maxDiffSize+64 {
+		t.Errorf("diff should be bounded, got %d bytes", len(diff))
+	}
+	if !strings.Contains(diff, "truncated") {
+		t.Error("a truncated diff must say so, or a reviewer reads a partial change as complete")
 	}
 }

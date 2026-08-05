@@ -84,6 +84,9 @@ func (l *Loader) LoadDefault() error {
 	l.v.SetDefault("quality.runSecurity", true)
 	l.v.SetDefault("quality.runPerformance", false)
 
+	l.v.SetDefault("review.enabled", true)
+	l.v.SetDefault("review.maxRevisions", 2)
+
 	l.v.SetDefault("recovery.enabled", true)
 	l.v.SetDefault("recovery.maxAttempts", 3)
 	l.v.SetDefault("recovery.timeoutSeconds", 300)
@@ -210,6 +213,12 @@ func (l *Loader) validate() error {
 	minCoverage := l.v.GetFloat64("quality.minimumCoverage")
 	if minCoverage < 0 || minCoverage > 1 {
 		return errors.New("quality minimumCoverage must be between 0 and 1")
+	}
+
+	// Validate review configuration. Zero revisions is valid — it means the
+	// first rejection is final — so only a negative value is an error.
+	if revisions := l.v.GetInt("review.maxRevisions"); revisions < 0 || revisions > 10 {
+		return errors.New("review maxRevisions must be between 0 and 10")
 	}
 
 	return nil

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/gates"
+	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/review"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/pkg/interfaces"
 )
 
@@ -27,6 +28,7 @@ const (
 	StageImplementing Stage = "implementing"
 	StageVerifying    Stage = "verifying"
 	StageRepairing    Stage = "repairing"
+	StageReviewing    Stage = "reviewing"
 	StageCommitting   Stage = "committing"
 	StageDone         Stage = "done"
 )
@@ -39,6 +41,10 @@ var (
 	ErrDirtyTree = errors.New("working tree has uncommitted changes")
 	// ErrGatesFailed reports that quality gates still failed after repairs.
 	ErrGatesFailed = errors.New("quality gates failed")
+	// ErrReviewRejected reports that the self-review still found blocking
+	// problems after repairs. Distinct from ErrGatesFailed: the tooling was
+	// satisfied and the judgement was not.
+	ErrReviewRejected = errors.New("self-review rejected the change")
 )
 
 // Claude runs prompts. Narrowed to what the executor needs so it can be
@@ -53,6 +59,13 @@ type Git interface {
 	Stage(ctx context.Context, paths []string) error
 	Commit(ctx context.Context, message string) (string, error)
 	GetLastCommit(ctx context.Context) (*interfaces.GitCommit, error)
+	Diff(ctx context.Context) (string, error)
+}
+
+// Reviewer critiques a change before it is committed. Optional: an executor
+// built without one runs on its quality gates alone.
+type Reviewer interface {
+	Review(ctx context.Context, change review.Change) (*review.Review, error)
 }
 
 // Memory is the persistent project state the executor reads and updates.
@@ -84,6 +97,10 @@ type Config struct {
 	// MaxRepairAttempts bounds how many times Claude is asked to fix failing
 	// gates before the task is abandoned. Zero means no repair attempts.
 	MaxRepairAttempts int
+	// MaxReviewAttempts bounds how many times a rejected change is sent back
+	// for revision before the task is abandoned. Zero means the first
+	// rejection is final.
+	MaxReviewAttempts int
 	// AutoCommit controls whether passing work is committed.
 	AutoCommit bool
 	// ProjectPath is the repository root.
@@ -98,10 +115,16 @@ type Executor struct {
 	memory      Memory
 	checkpoints Checkpoints
 	gates       *gates.Runner
+	reviewer    Reviewer
 	log         Logger
 }
 
 // New creates an executor from its dependencies.
+//
+// reviewer may be nil, which disables the self-review stage. That is a
+// deliberate configuration, not a degraded one: the gates still have to pass,
+// and a deployment without Claude quota to spend on review is better served
+// running gates alone than not running at all.
 func New(
 	cfg Config,
 	claude Claude,
@@ -109,6 +132,7 @@ func New(
 	memory Memory,
 	checkpoints Checkpoints,
 	gateRunner *gates.Runner,
+	reviewer Reviewer,
 	log Logger,
 ) *Executor {
 	return &Executor{
@@ -118,6 +142,7 @@ func New(
 		memory:      memory,
 		checkpoints: checkpoints,
 		gates:       gateRunner,
+		reviewer:    reviewer,
 		log:         log,
 	}
 }
@@ -131,6 +156,12 @@ type Outcome struct {
 	Repairs    int
 	Duration   time.Duration
 	Checkpoint string
+	// Review is the final self-review, nil when review is disabled or the run
+	// stopped before reaching it.
+	Review *review.Review
+	// Revisions counts how many times the change was sent back for review
+	// findings.
+	Revisions int
 }
 
 // RunNext selects the highest-priority open task and runs it to completion.
@@ -172,6 +203,23 @@ func (e *Executor) Run(ctx context.Context, task interfaces.BacklogTask) (*Outco
 	if err != nil {
 		e.recordFailure(ctx, task, err)
 		return outcome, err
+	}
+
+	// Review runs after the gates, not before: there is no point spending
+	// quota on a critique of a change that does not compile, and a reviewer
+	// asked to look at broken code reports the breakage instead of the design.
+	// It runs before the commit, because a rejected change must never reach
+	// history.
+	reviewed := e.reviewAndRevise(ctx, task)
+	outcome.Review = reviewed.review
+	outcome.Revisions = reviewed.revisions
+	outcome.Repairs += reviewed.repairs
+	if reviewed.report != nil {
+		outcome.Report = reviewed.report
+	}
+	if reviewed.err != nil {
+		e.recordFailure(ctx, task, reviewed.err)
+		return outcome, reviewed.err
 	}
 
 	if e.cfg.AutoCommit {
@@ -370,6 +418,106 @@ func (e *Executor) verifyAndRepair(
 	// rather than committed or discarded.
 	return report, e.cfg.MaxRepairAttempts, fmt.Errorf("%w after %d repair attempt(s): %s",
 		ErrGatesFailed, e.cfg.MaxRepairAttempts, gateNames(report.Failures()))
+}
+
+// verdict carries everything a review pass produced, including the work the
+// re-verification after a revision did. Grouped into one value because a
+// revision that fixes a review finding can break a gate, so the caller needs
+// the later gate report and repair count, not just the review.
+type verdict struct {
+	review    *review.Review
+	report    *gates.Report
+	revisions int
+	repairs   int
+	err       error
+}
+
+// reviewAndRevise critiques the change and sends it back for revision while it
+// is rejected, up to the configured limit.
+//
+// Each revision is re-verified before being reviewed again. A change that
+// satisfies the reviewer but breaks the build is not an improvement, and
+// skipping re-verification would let the review stage commit exactly that.
+func (e *Executor) reviewAndRevise(ctx context.Context, task interfaces.BacklogTask) verdict {
+	if e.reviewer == nil {
+		return verdict{}
+	}
+
+	var v verdict
+
+	for attempt := 0; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			v.err = err
+			return v
+		}
+
+		if err := e.updateStage(ctx, task, StageReviewing, 0.75); err != nil {
+			v.err = err
+			return v
+		}
+
+		diff, err := e.git.Diff(ctx)
+		if err != nil {
+			v.err = fmt.Errorf("failed to read the change for review: %w", err)
+			return v
+		}
+
+		change := review.Change{
+			TaskID:      task.ID,
+			Title:       task.Title,
+			Description: task.Description,
+			Diff:        diff,
+		}
+
+		result, err := e.reviewer.Review(ctx, change)
+		if err != nil {
+			// An unreadable or failed review is not an approval. Blocking here
+			// is the whole point of the stage.
+			v.err = fmt.Errorf("review failed: %w", err)
+			return v
+		}
+		v.review = result
+
+		if result.Approved {
+			e.log.Info("self-review approved the change",
+				"task", task.ID, "revisions", v.revisions, "findings", len(result.Findings))
+			return v
+		}
+
+		if attempt >= e.cfg.MaxReviewAttempts {
+			v.err = fmt.Errorf("%w after %d revision(s): %s",
+				ErrReviewRejected, v.revisions, review.FindingSummary(result.Blocking()))
+			return v
+		}
+
+		e.log.Warn("self-review requested changes",
+			"task", task.ID, "attempt", attempt+1, "blocking", len(result.Blocking()))
+
+		if err := e.updateStage(ctx, task, StageRepairing, 0.75); err != nil {
+			v.err = err
+			return v
+		}
+
+		session, err := e.claude.LaunchSession(ctx, review.BuildReviewRepairPrompt(change, result))
+		if err != nil {
+			v.err = fmt.Errorf("revision %d failed: %w", attempt+1, err)
+			return v
+		}
+		if len(session.Errors) > 0 {
+			v.err = fmt.Errorf("revision %d reported errors: %s",
+				attempt+1, strings.Join(session.Errors, "; "))
+			return v
+		}
+		v.revisions++
+
+		report, repairs, err := e.verifyAndRepair(ctx, task)
+		v.report = report
+		v.repairs += repairs
+		if err != nil {
+			v.err = err
+			return v
+		}
+	}
 }
 
 // commit stages and commits the task's work.

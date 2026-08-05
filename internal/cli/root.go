@@ -95,7 +95,21 @@ func newStartCommand(flags *globalFlags) *cobra.Command {
 				if o.Repairs > 0 {
 					_, _ = fmt.Fprintf(out, ", %d repair(s)", o.Repairs)
 				}
+				if o.Revisions > 0 {
+					_, _ = fmt.Fprintf(out, ", %d revision(s)", o.Revisions)
+				}
 				_, _ = fmt.Fprintf(out, ", %s)\n", o.Duration.Truncate(time.Millisecond))
+
+				// Findings the reviewer raised but did not block on would
+				// otherwise be lost: nothing else surfaces them, and a
+				// non-blocking finding is still something a human wanted to
+				// know about.
+				if o.Review != nil {
+					for _, f := range o.Review.Findings {
+						_, _ = fmt.Fprintf(out, "             [%s] %s: %s\n",
+							f.Severity, f.Perspective, f.Description)
+					}
+				}
 			}
 
 			if runErr != nil {
