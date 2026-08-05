@@ -55,14 +55,14 @@ tasks:
       priority: 5
       status: new
       createdAt: 2026-08-05T09:49:10.833894449Z
-      updatedAt: 0001-01-01T00:00:00Z
+      updatedAt: 2026-08-05T18:05:45.989798598Z
     - id: PHASE5-002
       title: Automatic toolchain detection on init
       description: '`leadengineer detect` exists but must be run by hand; init could offer it when no toolchain is declared.'
       priority: 6
       status: new
       createdAt: 2026-08-05T09:49:10.833894449Z
-      updatedAt: 2026-08-05T16:39:35.234846713Z
+      updatedAt: 2026-08-05T18:05:45.989798598Z
     - id: PHASE5-003
       title: Quality gates for Python and Rust
       description: Node and Go gate sets exist. Python and Rust are accepted by config validation but have no gates, so the executor refuses to run.
@@ -70,7 +70,14 @@ tasks:
       status: done
       createdAt: 2026-08-05T09:49:10.833894449Z
       updatedAt: 2026-08-05T16:39:35.234846713Z
-updatedAt: 2026-08-05T16:39:35.235781778Z
+    - id: PHASE6-001
+      title: Continuous operation
+      description: 'start --watch: an empty backlog waits for new work; failures are bounded.'
+      priority: 1
+      status: done
+      createdAt: 2026-08-05T18:05:45.989798598Z
+      updatedAt: 2026-08-05T18:05:45.989798598Z
+updatedAt: 2026-08-05T18:05:45.990283687Z
 ---
 
 # Product Backlog

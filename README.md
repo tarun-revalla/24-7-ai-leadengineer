@@ -4,7 +4,12 @@ An autonomous software engineering system that uses Claude Code as its execution
 
 It reads a backlog, implements the highest-priority task, verifies the result against quality
 gates, reviews it from six perspectives, and commits only if everything passes — then does it
-again. State lives in the repository, so the process can be killed at any point and resumed.
+again. With `--watch` it keeps going indefinitely, waiting for new tasks and sleeping through
+usage limits. State lives in the repository, so the process can be killed at any point and
+resumed.
+
+Any language. Nothing about a particular toolchain is compiled in — `leadengineer detect` reads
+your repository and records the commands that verify it.
 
 ## What it actually does
 
@@ -30,6 +35,8 @@ Three rules shape everything else:
 3. **A review that cannot be read is not an approval.** "The reviewer did not answer" and
    "the reviewer approved" must never collapse into the same outcome.
 
+**New here? [QUICKSTART.md](QUICKSTART.md) walks through putting this on a project of your own.**
+
 ## Install
 
 Requires Go 1.21+ and Git 2.30+. The Claude Code CLI must be on `PATH` for anything that runs
@@ -49,6 +56,7 @@ leadengineer init
 leadengineer start
 leadengineer start --once            # a single task
 leadengineer start --max-tasks 5
+leadengineer start --watch           # keep running, picking up new tasks as they arrive
 
 # What is the system doing, and what state is the repository in?
 leadengineer status
@@ -239,6 +247,21 @@ Not-checked: lint
 
 The trailer is what lets someone reviewing a week of unattended commits tell them apart from
 the log alone. Set `quality.inspectionOnly: true` to make it the default for a project.
+
+## Running unattended
+
+```bash
+leadengineer start --watch
+```
+
+The backlog emptying is a pause, not the end of the work: the watch waits and picks up tasks as
+you add them. Usage limits are slept through. Ctrl-C stops cleanly, mid-sleep included.
+
+A failed task does not stop the watch — the executor marks it `blocked`, and a blocked task is
+never selected again, so the loop moves on to work that can still succeed. What *does* stop it
+is repeated failure with no task completing in between: that means a problem no retry will
+clear (a dirty tree, a missing toolchain, no credentials) and continuing would burn quota
+reproducing the same error indefinitely. Any completed task resets the count.
 
 ## Interruption and recovery
 

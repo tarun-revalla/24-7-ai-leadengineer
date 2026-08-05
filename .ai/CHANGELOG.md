@@ -1,5 +1,9 @@
 ---
 entries:
+    - taskId: PHASE6-001
+      title: Continuous operation and handover documentation
+      date: 2026-08-05T18:05:45.989798598Z
+      summary: start --watch closes the gap between the project's name and its behaviour; QUICKSTART.md covers putting it on a new project.
     - taskId: PHASE5-003
       title: Language-agnostic verification
       date: 2026-08-05T16:39:35.234846713Z
@@ -56,7 +60,7 @@ entries:
       title: Configuration, logging and metrics
       date: 2026-08-05T03:51:38.270551246Z
       summary: Layered config with validation, structured logging, Prometheus metrics.
-updatedAt: 2026-08-05T16:39:35.237307935Z
+updatedAt: 2026-08-05T18:05:45.991228611Z
 ---
 
 # Changelog
