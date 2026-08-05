@@ -275,6 +275,59 @@ func TestDetectFailureAfterQuota(t *testing.T) {
 	}
 }
 
+// The CLI blocks every tool call under -p until a permission mode says
+// otherwise; verified by hand against the real binary, an unconfigured
+// session gets a permission_denials response and makes no file changes at
+// all. A session must not run without granting the capability it needs.
+func TestDefaultPermissionModeIsAcceptEdits(t *testing.T) {
+	fe := newFakeExecutor(okResponse(jsonOK))
+	m := newTestManager(t, fe)
+
+	if _, err := m.LaunchSession(context.Background(), "prompt"); err != nil {
+		t.Fatalf("LaunchSession failed: %v", err)
+	}
+
+	if !hasArgPair(fe.lastCall().args, "--permission-mode", "acceptEdits") {
+		t.Errorf("expected the default permission mode, got: %v", fe.lastCall().args)
+	}
+}
+
+func TestPermissionModeOverride(t *testing.T) {
+	fe := newFakeExecutor(okResponse(jsonOK))
+	m, err := New(t.TempDir(), "claude-opus-5", 1, 300,
+		WithExecutor(fe), WithPermissionMode("plan"))
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	if _, err := m.LaunchSession(context.Background(), "prompt"); err != nil {
+		t.Fatalf("LaunchSession failed: %v", err)
+	}
+
+	if !hasArgPair(fe.lastCall().args, "--permission-mode", "plan") {
+		t.Errorf("expected the overridden mode, got: %v", fe.lastCall().args)
+	}
+}
+
+// Omitting the flag is a deliberate, explicit choice — not the same as
+// forgetting to set one — for a caller that wants a read-only session.
+func TestPermissionModeCanBeOmitted(t *testing.T) {
+	fe := newFakeExecutor(okResponse(jsonOK))
+	m, err := New(t.TempDir(), "claude-opus-5", 1, 300,
+		WithExecutor(fe), WithPermissionMode(""))
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	if _, err := m.LaunchSession(context.Background(), "prompt"); err != nil {
+		t.Fatalf("LaunchSession failed: %v", err)
+	}
+
+	if hasArg(fe.lastCall().args, "--permission-mode") {
+		t.Errorf("--permission-mode should be omitted when explicitly cleared: %v", fe.lastCall().args)
+	}
+}
+
 func TestModelOmittedWhenUnset(t *testing.T) {
 	fe := newFakeExecutor(okResponse(jsonOK))
 	m, err := New(t.TempDir(), "", 1, 300, WithExecutor(fe))

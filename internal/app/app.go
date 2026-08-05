@@ -93,6 +93,7 @@ func New(opts Options) (*App, error) {
 		cfg.GetString("claude.model"),
 		cfg.GetInt("claude.maxRetries"),
 		cfg.GetInt("claude.timeoutSeconds"),
+		claude.WithPermissionMode(cfg.GetString("claude.permissionMode")),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open session store: %w", err)

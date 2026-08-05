@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/checkpoint"
+	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/executor"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/quota"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/pkg/interfaces"
 )
@@ -88,7 +89,7 @@ func (s *Status) NextTasks(limit int) []interfaces.BacklogTask {
 
 	open := make([]interfaces.BacklogTask, 0, len(s.Backlog.Tasks))
 	for _, t := range s.Backlog.Tasks {
-		if t.Status != "done" && t.Status != "completed" {
+		if executor.IsOpenStatus(t.Status) {
 			open = append(open, t)
 		}
 	}

@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/tarun-revalla/24-7-ai-leadengineer/internal/app"
@@ -66,14 +67,71 @@ func (f *globalFlags) open() (*app.App, error) {
 }
 
 func newStartCommand(flags *globalFlags) *cobra.Command {
-	return &cobra.Command{
+	var maxTasks int
+	var once bool
+
+	cmd := &cobra.Command{
 		Use:   "start",
-		Short: "Run the autonomous execution loop",
+		Short: "Run tasks from the backlog",
+		Long: "Executes backlog tasks highest priority first.\n\n" +
+			"Each task is implemented, verified against the quality gates, repaired\n" +
+			"if they fail, and committed only once they pass. The working tree must\n" +
+			"be clean before a task starts, so a commit cannot include unrelated work.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("start: %w — the task executor is not built; "+
-				"`status` and `checkpoint` operate on real state today", ErrNotImplemented)
+			a, err := flags.open()
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+
+			if once {
+				maxTasks = 1
+			}
+
+			out := cmd.OutOrStdout()
+			outcomes, runErr := a.RunLoop(cmd.Context(), maxTasks)
+
+			for _, o := range outcomes {
+				status := "no changes"
+				if o.Committed {
+					status = "committed " + shortHash(o.CommitHash)
+				}
+				fmt.Fprintf(out, "%-12s %s  (%s", o.Task.ID, o.Task.Title, status)
+				if o.Repairs > 0 {
+					fmt.Fprintf(out, ", %d repair(s)", o.Repairs)
+				}
+				fmt.Fprintf(out, ", %s)\n", o.Duration.Truncate(time.Millisecond))
+			}
+
+			if runErr != nil {
+				// A partial run is still progress; report what completed
+				// before surfacing why it stopped.
+				if len(outcomes) > 0 {
+					fmt.Fprintf(out, "\n%d task(s) completed before stopping.\n", len(outcomes))
+				}
+				return runErr
+			}
+
+			if len(outcomes) == 0 {
+				fmt.Fprintln(out, "No open tasks in the backlog.")
+			}
+
+			return nil
 		},
 	}
+
+	cmd.Flags().IntVar(&maxTasks, "max-tasks", 0, "stop after this many tasks (0 for no limit)")
+	cmd.Flags().BoolVar(&once, "once", false, "run a single task and stop")
+
+	return cmd
+}
+
+func shortHash(h string) string {
+	if len(h) > 8 {
+		return h[:8]
+	}
+	return h
 }
 
 func newRecoverCommand(flags *globalFlags) *cobra.Command {

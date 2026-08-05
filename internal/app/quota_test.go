@@ -207,3 +207,28 @@ func TestErrQuotaExhaustedIsIdentifiable(t *testing.T) {
 		t.Error("ErrQuotaExhausted must be identifiable through wrapping")
 	}
 }
+
+// A task the executor would refuse to run must not be presented in status as
+// open work — the two must agree on what counts as actionable.
+func TestStatusExcludesBlockedTasksFromOpenCount(t *testing.T) {
+	a := newTestApp(t)
+	ctx := context.Background()
+	a.Initialize(ctx, "Demo")
+
+	a.Memory.SaveBacklog(ctx, &interfaces.Backlog{
+		Tasks: []interfaces.BacklogTask{
+			{ID: "T-1", Title: "Blocked task", Priority: 1, Status: "blocked"},
+			{ID: "T-2", Title: "Open task", Priority: 2, Status: "new"},
+		},
+	})
+
+	status := a.Status(ctx)
+	next := status.NextTasks(0)
+
+	if len(next) != 1 {
+		t.Fatalf("got %d open tasks, want 1 (blocked task must be excluded)", len(next))
+	}
+	if next[0].ID != "T-2" {
+		t.Errorf("open task: got %q, want T-2", next[0].ID)
+	}
+}

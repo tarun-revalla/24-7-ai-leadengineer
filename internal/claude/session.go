@@ -16,6 +16,21 @@ import (
 // DefaultBinary is the Claude Code executable invoked when none is configured.
 const DefaultBinary = "claude"
 
+// DefaultPermissionMode is applied when no mode is configured.
+//
+// The CLI's non-interactive mode (-p) blocks every tool call, including file
+// writes, until a permission mode says otherwise — verified by hand against
+// the real binary: an unconfigured session gets "permission_denials" on its
+// Write calls and produces no file changes at all. "acceptEdits" grants
+// exactly the capability the implement and repair prompts need — Read, Edit,
+// Write — while leaving Bash denied by default. That fits this system's
+// architecture: quality gates run outside Claude through gates.Runner, so
+// Claude itself has no need to execute shell commands. The alternative,
+// --dangerously-skip-permissions, bypasses that boundary entirely; the CLI's
+// own help text calls it "recommended only for sandboxes with no internet
+// access," which does not describe where this system is meant to run.
+const DefaultPermissionMode = "acceptEdits"
+
 // Manager must satisfy the contract the rest of the system depends on.
 var _ interfaces.ClaudeSessionManager = (*Manager)(nil)
 
@@ -28,6 +43,7 @@ type Manager struct {
 	sessionsDir      string
 	currentSessionID string
 	binary           string
+	permissionMode   string
 	executor         CommandExecutor
 	mu               sync.RWMutex
 }
@@ -44,6 +60,14 @@ func WithExecutor(e CommandExecutor) Option {
 // WithBinary overrides the Claude executable name or path.
 func WithBinary(binary string) Option {
 	return func(m *Manager) { m.binary = binary }
+}
+
+// WithPermissionMode overrides the CLI's --permission-mode. An empty string
+// omits the flag entirely, which leaves every tool call denied under -p — the
+// CLI's own default, not a mode this system chooses. That is a legitimate
+// choice for a caller that wants a read-only or conversational session.
+func WithPermissionMode(mode string) Option {
+	return func(m *Manager) { m.permissionMode = mode }
 }
 
 // SessionMetadata contains session information.
@@ -86,6 +110,7 @@ func New(projectPath, model string, maxRetries, timeoutSeconds int, opts ...Opti
 		timeoutSeconds: timeoutSeconds,
 		sessionsDir:    sessionsDir,
 		binary:         DefaultBinary,
+		permissionMode: DefaultPermissionMode,
 		executor:       NewCLIExecutor(),
 	}
 
@@ -438,6 +463,9 @@ func (m *Manager) executePrompt(ctx context.Context, prompt string, resumeID str
 	}
 	if resumeID != "" {
 		args = append(args, "--resume", resumeID)
+	}
+	if m.permissionMode != "" {
+		args = append(args, "--permission-mode", m.permissionMode)
 	}
 
 	runCtx := ctx

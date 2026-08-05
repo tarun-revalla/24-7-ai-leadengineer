@@ -33,6 +33,18 @@ claude:
   # Maximum tokens per single request
   maxTokensPerRequest: 4000
 
+  # Permission mode passed to the Claude CLI's --permission-mode.
+  # Claude's non-interactive mode (-p) denies every tool call, including file
+  # writes, until a mode grants it. acceptEdits grants Read/Edit/Write without
+  # exposing Bash — this system's quality gates run outside Claude, so Claude
+  # never needs shell access to do its job.
+  # Choices: acceptEdits, auto, bypassPermissions, manual, dontAsk, plan.
+  # Set to "" to omit the flag and get the CLI's own default (fully denied).
+  # bypassPermissions and --dangerously-skip-permissions are NOT used here:
+  # the CLI documents that flag as suited to sandboxes with no internet
+  # access, which does not describe an unattended, long-running deployment.
+  permissionMode: "acceptEdits"
+
 # Quota Management
 quota:
   # How often to check quota status (seconds)

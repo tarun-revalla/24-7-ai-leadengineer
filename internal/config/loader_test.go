@@ -364,3 +364,41 @@ func TestConfigGetSpec(t *testing.T) {
 		t.Errorf("Quota.WarningThreshold: got %v, want 0.8", spec.Quota.WarningThreshold)
 	}
 }
+
+func TestLoaderValidatePermissionMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		wantErr bool
+	}{
+		{"acceptEdits is valid", "acceptEdits", false},
+		{"plan is valid", "plan", false},
+		{"bypassPermissions is valid", "bypassPermissions", false},
+		{"empty omits the flag deliberately", "", false},
+		{"unknown mode rejected", "yolo", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := NewLoader()
+			loader.LoadDefault()
+			loader.v.Set("claude.enabled", true)
+			loader.v.Set("claude.model", "claude-opus-5")
+			loader.v.Set("claude.permissionMode", tt.value)
+			err := loader.validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestConfigDefaultPermissionMode(t *testing.T) {
+	loader := NewLoader()
+	loader.LoadDefault()
+	cfg, _ := loader.BuildConfig()
+
+	if got := cfg.GetString("claude.permissionMode"); got != "acceptEdits" {
+		t.Errorf("default permissionMode: got %q, want acceptEdits", got)
+	}
+}

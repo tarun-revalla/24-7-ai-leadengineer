@@ -34,6 +34,10 @@ func (l *Loader) LoadDefault() error {
 	l.v.SetDefault("claude.timeoutSeconds", 300)
 	l.v.SetDefault("claude.contextWindowSize", 200000)
 	l.v.SetDefault("claude.maxTokensPerRequest", 4000)
+	// acceptEdits grants file write/edit without exposing Bash — Claude's -p
+	// mode denies every tool call by default, and this system's quality gates
+	// already run outside Claude, so Bash access is not needed for it to work.
+	l.v.SetDefault("claude.permissionMode", "acceptEdits")
 
 	l.v.SetDefault("quota.checkInterval", 30)
 	l.v.SetDefault("quota.warningThreshold", 0.8)
@@ -153,6 +157,19 @@ func (l *Loader) validate() error {
 		maxRetries := l.v.GetInt("claude.maxRetries")
 		if maxRetries < 1 || maxRetries > 10 {
 			return errors.New("claude maxRetries must be between 1 and 10")
+		}
+
+		// Empty is a deliberate, valid choice: it omits --permission-mode for a
+		// caller that wants Claude's own default (every tool call denied under
+		// -p), such as a read-only or conversational session.
+		if mode := l.v.GetString("claude.permissionMode"); mode != "" {
+			validModes := map[string]bool{
+				"acceptEdits": true, "auto": true, "bypassPermissions": true,
+				"manual": true, "dontAsk": true, "plan": true,
+			}
+			if !validModes[mode] {
+				return fmt.Errorf("invalid claude permissionMode: %s", mode)
+			}
 		}
 
 		timeout := l.v.GetInt("claude.timeoutSeconds")

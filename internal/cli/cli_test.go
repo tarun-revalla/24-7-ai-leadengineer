@@ -112,7 +112,7 @@ func TestStatusOnUninitializedProject(t *testing.T) {
 func TestUnimplementedCommandsReturnError(t *testing.T) {
 	dir := newRepo(t)
 
-	for _, name := range []string{"start", "recover"} {
+	for _, name := range []string{"recover"} {
 		t.Run(name, func(t *testing.T) {
 			_, err := run(t, dir, name)
 			if err == nil {
@@ -122,6 +122,27 @@ func TestUnimplementedCommandsReturnError(t *testing.T) {
 				t.Errorf("%s: got %v, want ErrNotImplemented", name, err)
 			}
 		})
+	}
+}
+
+func TestStartOnUninitializedProject(t *testing.T) {
+	dir := newRepo(t)
+
+	if _, err := run(t, dir, "start"); err == nil {
+		t.Fatal("start on an uninitialised project should fail rather than silently do nothing")
+	}
+}
+
+func TestStartWithEmptyBacklog(t *testing.T) {
+	dir := newRepo(t)
+	run(t, dir, "init")
+
+	out, err := run(t, dir, "start")
+	if err != nil {
+		t.Fatalf("start with an empty backlog should succeed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "No open tasks") {
+		t.Errorf("expected an empty-backlog message:\n%s", out)
 	}
 }
 
