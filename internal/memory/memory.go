@@ -2,15 +2,22 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/tarun-revalla/24-7-ai-leadengineer/pkg/interfaces"
-	"gopkg.in/yaml.v3"
 )
+
+// decisionSet wraps the decision list so DECISIONS.md has a mapping at its
+// root, matching every other memory document.
+type decisionSet struct {
+	Decisions []interfaces.Decision `yaml:"decisions"`
+}
 
 const aiDir = ".ai"
 
@@ -44,14 +51,9 @@ func (m *Manager) GetProject(ctx context.Context) (*interfaces.ProjectMetadata, 
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	data, err := m.readFile("PROJECT.md")
-	if err != nil {
-		return nil, err
-	}
-
 	proj := &interfaces.ProjectMetadata{}
-	if err := yaml.Unmarshal([]byte(data), proj); err != nil {
-		return nil, fmt.Errorf("failed to parse PROJECT.md: %w", err)
+	if err := m.readMeta("PROJECT.md", proj); err != nil {
+		return nil, err
 	}
 
 	return proj, nil
@@ -62,14 +64,9 @@ func (m *Manager) GetBacklog(ctx context.Context) (*interfaces.Backlog, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	data, err := m.readFile("BACKLOG.md")
-	if err != nil {
-		return nil, err
-	}
-
 	backlog := &interfaces.Backlog{}
-	if err := yaml.Unmarshal([]byte(data), backlog); err != nil {
-		return nil, fmt.Errorf("failed to parse BACKLOG.md: %w", err)
+	if err := m.readMeta("BACKLOG.md", backlog); err != nil {
+		return nil, err
 	}
 
 	return backlog, nil
@@ -80,14 +77,9 @@ func (m *Manager) GetCurrent(ctx context.Context) (*interfaces.CurrentTask, erro
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	data, err := m.readFile("CURRENT.md")
-	if err != nil {
-		return nil, err
-	}
-
 	current := &interfaces.CurrentTask{}
-	if err := yaml.Unmarshal([]byte(data), current); err != nil {
-		return nil, fmt.Errorf("failed to parse CURRENT.md: %w", err)
+	if err := m.readMeta("CURRENT.md", current); err != nil {
+		return nil, err
 	}
 
 	return current, nil
@@ -98,14 +90,9 @@ func (m *Manager) GetChangelog(ctx context.Context) (*interfaces.Changelog, erro
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	data, err := m.readFile("CHANGELOG.md")
-	if err != nil {
-		return nil, err
-	}
-
 	changelog := &interfaces.Changelog{}
-	if err := yaml.Unmarshal([]byte(data), changelog); err != nil {
-		return nil, fmt.Errorf("failed to parse CHANGELOG.md: %w", err)
+	if err := m.readMeta("CHANGELOG.md", changelog); err != nil {
+		return nil, err
 	}
 
 	return changelog, nil
@@ -116,17 +103,7 @@ func (m *Manager) GetDecisions(ctx context.Context) ([]interfaces.Decision, erro
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	data, err := m.readFile("DECISIONS.md")
-	if err != nil {
-		return nil, err
-	}
-
-	var decisions []interfaces.Decision
-	if err := yaml.Unmarshal([]byte(data), &decisions); err != nil {
-		return nil, fmt.Errorf("failed to parse DECISIONS.md: %w", err)
-	}
-
-	return decisions, nil
+	return m.decisions()
 }
 
 // ReadFile reads an arbitrary file from the .ai directory.
@@ -141,14 +118,9 @@ func (m *Manager) SaveProject(ctx context.Context, proj *interfaces.ProjectMetad
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	proj.UpdatedAt = time.Now()
+	proj.UpdatedAt = time.Now().UTC()
 
-	data, err := yaml.Marshal(proj)
-	if err != nil {
-		return fmt.Errorf("failed to marshal project: %w", err)
-	}
-
-	return m.writeFile("PROJECT.md", string(data))
+	return m.writeMeta("PROJECT.md", proj, defaultProjectBody)
 }
 
 // SaveBacklog saves the task backlog.
@@ -156,14 +128,9 @@ func (m *Manager) SaveBacklog(ctx context.Context, backlog *interfaces.Backlog) 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	backlog.UpdatedAt = time.Now()
+	backlog.UpdatedAt = time.Now().UTC()
 
-	data, err := yaml.Marshal(backlog)
-	if err != nil {
-		return fmt.Errorf("failed to marshal backlog: %w", err)
-	}
-
-	return m.writeFile("BACKLOG.md", string(data))
+	return m.writeMeta("BACKLOG.md", backlog, defaultBacklogBody)
 }
 
 // SaveCurrent saves the current task.
@@ -171,14 +138,9 @@ func (m *Manager) SaveCurrent(ctx context.Context, current *interfaces.CurrentTa
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	current.UpdatedAt = time.Now()
+	current.UpdatedAt = time.Now().UTC()
 
-	data, err := yaml.Marshal(current)
-	if err != nil {
-		return fmt.Errorf("failed to marshal current: %w", err)
-	}
-
-	return m.writeFile("CURRENT.md", string(data))
+	return m.writeMeta("CURRENT.md", current, defaultCurrentBody)
 }
 
 // SaveChangelog saves the changelog.
@@ -186,14 +148,9 @@ func (m *Manager) SaveChangelog(ctx context.Context, changelog *interfaces.Chang
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	changelog.UpdatedAt = time.Now()
+	changelog.UpdatedAt = time.Now().UTC()
 
-	data, err := yaml.Marshal(changelog)
-	if err != nil {
-		return fmt.Errorf("failed to marshal changelog: %w", err)
-	}
-
-	return m.writeFile("CHANGELOG.md", string(data))
+	return m.writeMeta("CHANGELOG.md", changelog, defaultChangelogBody)
 }
 
 // SaveDecision saves an architectural decision.
@@ -201,17 +158,20 @@ func (m *Manager) SaveDecision(ctx context.Context, decision interfaces.Decision
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	decision.Date = time.Now()
-
-	decisions, _ := m.getDecisions()
-	decisions = append(decisions, decision)
-
-	data, err := yaml.Marshal(decisions)
-	if err != nil {
-		return fmt.Errorf("failed to marshal decisions: %w", err)
+	if decision.Date.IsZero() {
+		decision.Date = time.Now().UTC()
 	}
 
-	return m.writeFile("DECISIONS.md", string(data))
+	existing, err := m.decisions()
+	if err != nil && !errors.Is(err, ErrNoFrontMatter) && !os.IsNotExist(errors.Unwrap(err)) {
+		// Appending to a document that failed to parse would discard the
+		// decisions already recorded there.
+		return fmt.Errorf("refusing to append to unreadable DECISIONS.md: %w", err)
+	}
+
+	existing = append(existing, decision)
+
+	return m.writeMeta("DECISIONS.md", &decisionSet{Decisions: existing}, defaultDecisionsBody)
 }
 
 // WriteFile writes an arbitrary file to the .ai directory.
@@ -226,11 +186,26 @@ func (m *Manager) SyncWithClaude(ctx context.Context) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	files := []string{"PROJECT.md", "ROADMAP.md", "BACKLOG.md", "CURRENT.md", "DECISIONS.md"}
+	// Existence alone is not enough: a file the system cannot parse would
+	// hand Claude stale or empty context while appearing healthy.
+	checks := []struct {
+		file string
+		into any
+	}{
+		{"PROJECT.md", &interfaces.ProjectMetadata{}},
+		{"BACKLOG.md", &interfaces.Backlog{}},
+		{"CURRENT.md", &interfaces.CurrentTask{}},
+	}
 
-	for _, file := range files {
-		if _, err := m.readFile(file); err != nil {
-			return fmt.Errorf("cannot sync with Claude: missing %s", file)
+	for _, c := range checks {
+		if err := m.readMeta(c.file, c.into); err != nil {
+			return fmt.Errorf("cannot sync with Claude: %w", err)
+		}
+	}
+
+	for _, name := range []string{"ROADMAP.md", "DECISIONS.md"} {
+		if _, err := m.readFile(name); err != nil {
+			return fmt.Errorf("cannot sync with Claude: %w", err)
 		}
 	}
 
@@ -261,16 +236,52 @@ func (m *Manager) writeFile(name string, content string) error {
 	return nil
 }
 
-// getDecisions is an internal helper that doesn't lock.
-func (m *Manager) getDecisions() ([]interfaces.Decision, error) {
-	data, err := m.readFile("DECISIONS.md")
-	if err != nil {
+// decisions reads the decision set. Callers must hold at least a read lock.
+func (m *Manager) decisions() ([]interfaces.Decision, error) {
+	set := &decisionSet{}
+	if err := m.readMeta("DECISIONS.md", set); err != nil {
 		return nil, err
+	}
+	return set.Decisions, nil
+}
+
+// readMeta loads a document's front matter into out.
+func (m *Manager) readMeta(name string, out any) error {
+	raw, err := m.readFile(name)
+	if err != nil {
+		return err
 	}
 
-	var decisions []interfaces.Decision
-	if err := yaml.Unmarshal([]byte(data), &decisions); err != nil {
-		return nil, err
+	doc, err := parseDocument(raw)
+	if err != nil {
+		return fmt.Errorf("%s: %w", name, err)
 	}
-	return decisions, nil
+
+	if err := doc.decodeInto(out); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+
+	return nil
+}
+
+// writeMeta rewrites a document's front matter while preserving its body.
+// The body is the human- and Claude-facing documentation; a state update must
+// never discard it. When the document does not yet exist, defaultBody seeds it.
+func (m *Manager) writeMeta(name string, meta any, defaultBody string) error {
+	body := defaultBody
+
+	if raw, err := m.readFile(name); err == nil {
+		// Parse errors are deliberately tolerated here: an unparseable header
+		// still yields the body, which is what must be carried forward.
+		if doc, _ := parseDocument(raw); doc != nil && strings.TrimSpace(doc.body) != "" {
+			body = doc.body
+		}
+	}
+
+	rendered, err := renderDocument(meta, body)
+	if err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+
+	return m.writeFile(name, rendered)
 }

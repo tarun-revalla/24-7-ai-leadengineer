@@ -1,3 +1,13 @@
+---
+taskId: PHASE3-001
+title: Wire CLI commands to real subsystems
+plan: Composition root in internal/app wires config, logging, memory, checkpoints, git and claude. CLI commands consume it.
+progress: 0.4
+startedAt: 2026-08-05T03:51:38.270551246Z
+status: implementing
+updatedAt: 2026-08-05T03:51:38.271180664Z
+---
+
 # Current Work
 
 ## Phase 1: Architecture Design Review

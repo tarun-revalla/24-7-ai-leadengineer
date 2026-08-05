@@ -1,3 +1,37 @@
+---
+decisions:
+    - id: ARCH-001
+      title: Go as the implementation language
+      status: accepted
+      context: Long-running supervisor process
+      rationale: Single static binary, cheap concurrency, fast startup, low memory.
+      date: 2026-08-05T03:51:38.271901508Z
+    - id: ARCH-002
+      title: Subsystems behind explicit interfaces
+      status: accepted
+      context: Subsystems must be replaceable and testable in isolation
+      rationale: Compile-time conformance assertions catch drift that tests miss.
+      date: 2026-08-05T03:51:38.272346525Z
+    - id: ARCH-003
+      title: Memory documents carry YAML front matter
+      status: accepted
+      context: One file must serve both machine state and Claude context
+      rationale: Front matter keeps structured state parseable while the body stays human-readable; writes preserve the body.
+      date: 2026-08-05T03:51:38.272729447Z
+    - id: ARCH-004
+      title: Checkpoints are atomic and checksummed
+      status: accepted
+      context: Recovery must survive a crash mid-write
+      rationale: Temp file plus rename leaves no torn state; checksums make corruption detectable so recovery can skip to the newest intact checkpoint.
+      date: 2026-08-05T03:51:38.273173178Z
+    - id: ARCH-005
+      title: Usage limits are not retried
+      status: accepted
+      context: Retrying a quota failure cannot succeed
+      rationale: Quota breaks the retry loop so the caller can checkpoint and sleep until the window resets.
+      date: 2026-08-05T03:51:38.273549498Z
+---
+
 # Architectural Decisions
 
 This document tracks architectural decisions made for the 24-7 AI Lead Engineer project. Each decision includes context, rationale, and trade-offs.

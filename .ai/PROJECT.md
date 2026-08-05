@@ -1,3 +1,16 @@
+---
+name: 24-7 AI Lead Engineer
+description: Autonomous software engineering platform using Claude Code as its execution engine.
+purpose: 'Run continuously with minimal human intervention: plan, implement, verify, review and commit work while surviving crashes and usage limits.'
+constraints:
+    - Never lose project state or unfinished work
+    - Never commit code that fails a quality gate
+    - Never continue silently after a failure
+    - Every subsystem independently testable and replaceable
+    - 'Restart-safe: all progress checkpointed'
+updatedAt: 2026-08-05T03:51:38.269925207Z
+---
+
 # Project: 24-7 AI Lead Engineer
 
 ## Overview

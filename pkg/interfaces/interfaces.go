@@ -73,67 +73,67 @@ type Memory interface {
 
 // ProjectMetadata contains high-level project information.
 type ProjectMetadata struct {
-	Name        string
-	Description string
-	Purpose     string
-	Constraints []string
-	UpdatedAt   time.Time
+	Name        string    `yaml:"name"`
+	Description string    `yaml:"description,omitempty"`
+	Purpose     string    `yaml:"purpose,omitempty"`
+	Constraints []string  `yaml:"constraints,omitempty"`
+	UpdatedAt   time.Time `yaml:"updatedAt"`
 }
 
 // Backlog represents the work queue.
 type Backlog struct {
-	Tasks     []BacklogTask
-	UpdatedAt time.Time
+	Tasks     []BacklogTask `yaml:"tasks"`
+	UpdatedAt time.Time     `yaml:"updatedAt"`
 }
 
 // BacklogTask represents a single task.
 type BacklogTask struct {
-	ID          string
-	Title       string
-	Description string
-	Priority    int    // 1=highest, 10=lowest
-	Status      string // "new", "in-progress", "blocked", "done"
-	Estimate    time.Duration
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          string        `yaml:"id"`
+	Title       string        `yaml:"title"`
+	Description string        `yaml:"description,omitempty"`
+	Priority    int           `yaml:"priority"` // 1=highest, 10=lowest
+	Status      string        `yaml:"status"`   // "new", "in-progress", "blocked", "done"
+	Estimate    time.Duration `yaml:"estimate,omitempty"`
+	CreatedAt   time.Time     `yaml:"createdAt"`
+	UpdatedAt   time.Time     `yaml:"updatedAt"`
 }
 
 // CurrentTask represents the task currently being executed.
 type CurrentTask struct {
-	TaskID     string
-	Title      string
-	Plan       string
-	Progress   float64 // 0.0 to 1.0
-	StartedAt  time.Time
-	Checkpoint string
-	Status     string // "not-started", "planning", "implementing", "testing", "reviewing", "committing"
-	Errors     []string
-	UpdatedAt  time.Time
+	TaskID     string    `yaml:"taskId"`
+	Title      string    `yaml:"title,omitempty"`
+	Plan       string    `yaml:"plan,omitempty"`
+	Progress   float64   `yaml:"progress"` // 0.0 to 1.0
+	StartedAt  time.Time `yaml:"startedAt"`
+	Checkpoint string    `yaml:"checkpoint,omitempty"`
+	Status     string    `yaml:"status"` // "not-started", "planning", "implementing", "testing", "reviewing", "committing"
+	Errors     []string  `yaml:"errors,omitempty"`
+	UpdatedAt  time.Time `yaml:"updatedAt"`
 }
 
 // Changelog tracks completed work.
 type Changelog struct {
-	Entries   []ChangelogEntry
-	UpdatedAt time.Time
+	Entries   []ChangelogEntry `yaml:"entries"`
+	UpdatedAt time.Time        `yaml:"updatedAt"`
 }
 
 // ChangelogEntry represents a completed task.
 type ChangelogEntry struct {
-	TaskID  string
-	Title   string
-	Date    time.Time
-	Commit  string
-	Summary string
+	TaskID  string    `yaml:"taskId"`
+	Title   string    `yaml:"title"`
+	Date    time.Time `yaml:"date"`
+	Commit  string    `yaml:"commit,omitempty"`
+	Summary string    `yaml:"summary,omitempty"`
 }
 
 // Decision represents an architectural decision.
 type Decision struct {
-	ID        string
-	Title     string
-	Status    string // "proposed", "accepted", "rejected", "superseded"
-	Context   string
-	Rationale string
-	Date      time.Time
+	ID        string    `yaml:"id"`
+	Title     string    `yaml:"title"`
+	Status    string    `yaml:"status"` // "proposed", "accepted", "rejected", "superseded"
+	Context   string    `yaml:"context,omitempty"`
+	Rationale string    `yaml:"rationale,omitempty"`
+	Date      time.Time `yaml:"date"`
 }
 
 // ClaudeSessionManager manages Claude Code sessions.
