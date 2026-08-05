@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -137,5 +138,55 @@ func TestParseCommitLineRejectsMalformed(t *testing.T) {
 		if _, ok := parseCommitLine(line); ok {
 			t.Errorf("parseCommitLine(%q) should have been rejected", line)
 		}
+	}
+}
+
+// A brand-new repository — git init, no commits yet — is a normal state a
+// project sits in right before its first commit. Status must work then, not
+// just after history exists.
+func TestStatusOnRepositoryWithNoCommits(t *testing.T) {
+	dir := t.TempDir()
+	cmd := exec.Command("git", "init")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, out)
+	}
+
+	m := New(dir, "Test User", "test@example.com", true, 3)
+	ctx := context.Background()
+
+	status, err := m.Status(ctx)
+	if err != nil {
+		t.Fatalf("Status must succeed on an unborn branch: %v", err)
+	}
+	if status.Branch == "" {
+		t.Error("Branch should be resolved even before the first commit")
+	}
+	if !status.IsClean {
+		t.Error("a freshly initialised repository should be clean")
+	}
+}
+
+func TestStatusOnDetachedHead(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+	m := New(tmpDir, "Test User", "test@example.com", true, 3)
+	ctx := context.Background()
+
+	os.WriteFile(filepath.Join(tmpDir, "f.txt"), []byte("x"), 0o644)
+	m.Stage(ctx, []string{"f.txt"})
+	m.Commit(ctx, "second commit")
+
+	detach := exec.Command("git", "checkout", "HEAD~1")
+	detach.Dir = tmpDir
+	if out, err := detach.CombinedOutput(); err != nil {
+		t.Fatalf("failed to detach HEAD: %v\n%s", err, out)
+	}
+
+	status, err := m.Status(ctx)
+	if err != nil {
+		t.Fatalf("Status must succeed on a detached HEAD: %v", err)
+	}
+	if status.Branch == "" {
+		t.Error("Branch should still resolve to something (git's convention: HEAD) when detached")
 	}
 }

@@ -132,11 +132,11 @@ func (m *Manager) Status(ctx context.Context) (*interfaces.GitStatus, error) {
 	// would then believe there is nothing to commit when git in fact failed.
 	status := &interfaces.GitStatus{}
 
-	branch, err := m.execGit(ctx, "rev-parse", "--abbrev-ref", "HEAD")
+	branch, err := m.currentBranch(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine current branch: %w", err)
 	}
-	status.Branch = strings.TrimSpace(branch)
+	status.Branch = branch
 
 	porcelain, err := m.execGit(ctx, "status", "--porcelain")
 	if err != nil {
@@ -310,6 +310,26 @@ func (m *Manager) execGit(ctx context.Context, args ...string) (string, error) {
 
 	output, err := cmd.Output()
 	return string(output), err
+}
+
+// currentBranch resolves the checked-out branch name.
+//
+// "rev-parse --abbrev-ref HEAD" alone fails on a repository with no commits
+// yet — HEAD points at an unborn branch, which is exactly the state a project
+// is in right after `git init`, before its first commit. "symbolic-ref" gives
+// the branch name in that case, so it is tried first; it fails in turn on a
+// detached HEAD, where rev-parse's answer ("HEAD") is what's wanted instead.
+// Only a repository broken in some other way fails both.
+func (m *Manager) currentBranch(ctx context.Context) (string, error) {
+	if out, err := m.execGit(ctx, "symbolic-ref", "--short", "HEAD"); err == nil {
+		return strings.TrimSpace(out), nil
+	}
+
+	out, err := m.execGit(ctx, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
 }
 
 // retryPush retries a failed push with exponential backoff, abandoning the

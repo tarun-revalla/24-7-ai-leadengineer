@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -107,21 +106,11 @@ func TestStatusOnUninitializedProject(t *testing.T) {
 	}
 }
 
-// A command that does nothing must not report success. Returning nil from a
-// stub is the silent-failure pattern this system exists to avoid.
-func TestUnimplementedCommandsReturnError(t *testing.T) {
+func TestRecoverOnUninitializedProject(t *testing.T) {
 	dir := newRepo(t)
 
-	for _, name := range []string{"recover"} {
-		t.Run(name, func(t *testing.T) {
-			_, err := run(t, dir, name)
-			if err == nil {
-				t.Fatalf("%s returned success without doing anything", name)
-			}
-			if !errors.Is(err, ErrNotImplemented) {
-				t.Errorf("%s: got %v, want ErrNotImplemented", name, err)
-			}
-		})
+	if _, err := run(t, dir, "recover"); err == nil {
+		t.Fatal("recover on an uninitialised project should fail rather than silently do nothing")
 	}
 }
 
@@ -435,5 +424,70 @@ func TestQuotaClearWithNoCooldown(t *testing.T) {
 	}
 	if !strings.Contains(out, "nothing to clear") {
 		t.Errorf("expected a no-op message:\n%s", out)
+	}
+}
+
+func TestRecoverWithNoInterruptedWork(t *testing.T) {
+	dir := newRepo(t)
+	run(t, dir, "init")
+
+	out, err := run(t, dir, "recover")
+	if err != nil {
+		t.Fatalf("recover should succeed with nothing interrupted: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "No interrupted work") {
+		t.Errorf("expected no-interruption message:\n%s", out)
+	}
+}
+
+func TestRecoverWithInterruptedCleanTask(t *testing.T) {
+	dir := newRepo(t)
+	run(t, dir, "init")
+
+	a, err := app.New(app.Options{ProjectPath: dir, LogToStderr: true})
+	if err != nil {
+		t.Fatalf("app.New failed: %v", err)
+	}
+	ctx := context.Background()
+	a.Memory.SaveBacklog(ctx, &interfaces.Backlog{
+		Tasks: []interfaces.BacklogTask{{ID: "T-1", Title: "Interrupted", Status: "in-progress"}},
+	})
+	a.Close()
+
+	out, err := run(t, dir, "recover")
+	if err != nil {
+		t.Fatalf("a clean interrupted task should still report success: %v\n%s", err, out)
+	}
+	for _, want := range []string{"T-1", "Safe to resume"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recover output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRecoverWithInterruptedDirtyTask(t *testing.T) {
+	dir := newRepo(t)
+	run(t, dir, "init")
+
+	a, err := app.New(app.Options{ProjectPath: dir, LogToStderr: true})
+	if err != nil {
+		t.Fatalf("app.New failed: %v", err)
+	}
+	ctx := context.Background()
+	a.Memory.SaveBacklog(ctx, &interfaces.Backlog{
+		Tasks: []interfaces.BacklogTask{{ID: "T-1", Title: "Interrupted", Status: "in-progress"}},
+	})
+	a.Close()
+
+	if err := os.WriteFile(filepath.Join(dir, "partial.go"), []byte("package main"), 0o644); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	out, err := run(t, dir, "recover")
+	if err == nil {
+		t.Fatal("a dirty interrupted task must exit non-zero so automation notices")
+	}
+	if !strings.Contains(out, "will not discard them automatically") {
+		t.Errorf("recover output missing guidance:\n%s", out)
 	}
 }

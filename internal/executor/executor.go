@@ -237,12 +237,6 @@ func (e *Executor) selectTask(ctx context.Context) (*interfaces.BacklogTask, err
 const StateDirPrefix = ".ai/"
 
 // requireCleanTree refuses to start work over uncommitted changes.
-//
-// Changes under .ai/ are excluded. That directory is the system's own
-// bookkeeping — the executor rewrites it on every run, and a human editing the
-// backlog is queueing work rather than leaving unrelated edits behind. The
-// guard exists to stop a task's commit from sweeping in someone else's
-// in-progress work, and state the system owns is never that.
 func (e *Executor) requireCleanTree(ctx context.Context) error {
 	status, err := e.git.Status(ctx)
 	if err != nil {
@@ -253,11 +247,8 @@ func (e *Executor) requireCleanTree(ctx context.Context) error {
 		return fmt.Errorf("%w: unresolved merge conflicts", ErrDirtyTree)
 	}
 
-	staged := excludingState(status.StagedChanges)
-	modified := excludingState(status.UnstagedChanges)
-	untracked := excludingState(status.UntrackedFiles)
-
-	if n := staged + modified + untracked; n > 0 {
+	clean, staged, modified, untracked := RealWorkStatus(status)
+	if !clean {
 		return fmt.Errorf("%w: %d staged, %d modified, %d untracked; commit or stash before starting",
 			ErrDirtyTree, staged, modified, untracked)
 	}
@@ -265,7 +256,33 @@ func (e *Executor) requireCleanTree(ctx context.Context) error {
 	return nil
 }
 
+// RealWorkStatus reports how many paths outside the system's state directory
+// are staged, modified, or untracked, and whether that leaves the tree clean.
+// It does not look at conflicts — HasConflicts on the underlying status is a
+// separate, more specific signal callers should check first, since "there is
+// a conflict" and "there are N unrelated modified files" call for different
+// guidance.
+//
+// Exported so any caller that needs to judge tree cleanliness — the recovery
+// analyzer, in particular — uses this exact rule rather than re-deriving it.
+// The status/executor split over "open" backlog statuses drifted once before
+// for precisely this reason; a dirty-tree definition duplicated in a second
+// package would be the same mistake again.
+func RealWorkStatus(status *interfaces.GitStatus) (clean bool, staged, modified, untracked int) {
+	staged = excludingState(status.StagedChanges)
+	modified = excludingState(status.UnstagedChanges)
+	untracked = excludingState(status.UntrackedFiles)
+
+	return staged+modified+untracked == 0, staged, modified, untracked
+}
+
 // excludingState counts paths outside the system's state directory.
+//
+// Changes under .ai/ are excluded. That directory is the system's own
+// bookkeeping — the executor rewrites it on every run, and a human editing the
+// backlog is queueing work rather than leaving unrelated edits behind. The
+// guard exists to stop a task's commit from sweeping in someone else's
+// in-progress work, and state the system owns is never that.
 func excludingState(paths []string) int {
 	n := 0
 	for _, p := range paths {

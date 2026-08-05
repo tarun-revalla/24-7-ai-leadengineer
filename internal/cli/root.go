@@ -15,12 +15,6 @@ type globalFlags struct {
 	configFile  string
 }
 
-// ErrNotImplemented marks a command that is declared but not yet built.
-//
-// Returning it is deliberate: a stub that returns nil reports success for work
-// it never did, which is exactly the silent failure this system must not have.
-var ErrNotImplemented = errors.New("not implemented yet")
-
 // NewRootCommand creates the root CLI command.
 func NewRootCommand(version, commit, date string) *cobra.Command {
 	flags := &globalFlags{}
@@ -137,10 +131,39 @@ func shortHash(h string) string {
 func newRecoverCommand(flags *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "recover",
-		Short: "Resume work interrupted by a crash or usage limit",
+		Short: "Diagnose work interrupted by a crash or usage limit",
+		Long: "Reports whether a task was left in progress by a crash, kill, or power\n" +
+			"loss, and what to do about it.\n\n" +
+			"This command is read-only. If the working tree is clean, resuming is as\n" +
+			"simple as running `leadengineer start` again. If uncommitted changes are\n" +
+			"present, they are left for you to review — this system will not guess\n" +
+			"whether they are worth keeping.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("recover: %w — inspect state with `status` and "+
-				"`checkpoint list` in the meantime", ErrNotImplemented)
+			a, err := flags.open()
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+
+			report, err := a.Recover(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprint(cmd.OutOrStdout(), report.Render())
+
+			if report.Interrupted && !report.SafeToResume {
+				// A silent zero exit here would let an automated caller
+				// treat "needs a human" the same as "nothing to do".
+				return errNeedsAttention
+			}
+			return nil
 		},
 	}
 }
+
+// errNeedsAttention signals that recover found something an operator must
+// look at, distinct from a normal command failure — the report itself already
+// explains what and why.
+var errNeedsAttention = errors.New("interrupted work needs attention before it can resume")
