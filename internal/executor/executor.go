@@ -84,6 +84,14 @@ type Checkpoints interface {
 	CreateCheckpoint(ctx context.Context, state *interfaces.CheckpointState) (string, error)
 }
 
+// Metrics records what each run cost and how it ended. Optional: an executor
+// built without one simply records nothing.
+type Metrics interface {
+	RecordTaskDuration(taskID string, duration time.Duration)
+	RecordTaskSuccess(taskID string)
+	RecordTaskFailure(taskID string, reason string)
+}
+
 // Logger records progress.
 type Logger interface {
 	Debug(msg string, fields ...interface{})
@@ -116,34 +124,44 @@ type Executor struct {
 	checkpoints Checkpoints
 	gates       *gates.Runner
 	reviewer    Reviewer
+	metrics     Metrics
 	log         Logger
 }
 
-// New creates an executor from its dependencies.
+// Deps are the subsystems an executor runs on.
 //
-// reviewer may be nil, which disables the self-review stage. That is a
-// deliberate configuration, not a degraded one: the gates still have to pass,
-// and a deployment without Claude quota to spend on review is better served
-// running gates alone than not running at all.
-func New(
-	cfg Config,
-	claude Claude,
-	git Git,
-	memory Memory,
-	checkpoints Checkpoints,
-	gateRunner *gates.Runner,
-	reviewer Reviewer,
-	log Logger,
-) *Executor {
+// A struct rather than a parameter list: these are eight interface values of
+// similar shape, and two of them transposed in a positional call would still
+// compile.
+//
+// Reviewer and Metrics may be nil. A nil Reviewer disables the self-review
+// stage — a deliberate configuration, not a degraded one, since the gates
+// still have to pass and a deployment without quota to spend on review is
+// better served running gates alone than not running at all. A nil Metrics
+// simply records nothing.
+type Deps struct {
+	Claude      Claude
+	Git         Git
+	Memory      Memory
+	Checkpoints Checkpoints
+	Gates       *gates.Runner
+	Reviewer    Reviewer
+	Metrics     Metrics
+	Log         Logger
+}
+
+// New creates an executor from its dependencies.
+func New(cfg Config, deps Deps) *Executor {
 	return &Executor{
 		cfg:         cfg,
-		claude:      claude,
-		git:         git,
-		memory:      memory,
-		checkpoints: checkpoints,
-		gates:       gateRunner,
-		reviewer:    reviewer,
-		log:         log,
+		claude:      deps.Claude,
+		git:         deps.Git,
+		memory:      deps.Memory,
+		checkpoints: deps.Checkpoints,
+		gates:       deps.Gates,
+		reviewer:    deps.Reviewer,
+		metrics:     deps.Metrics,
+		log:         deps.Log,
 	}
 }
 
@@ -193,16 +211,14 @@ func (e *Executor) Run(ctx context.Context, task interfaces.BacklogTask) (*Outco
 	}
 
 	if err := e.implement(ctx, task); err != nil {
-		e.recordFailure(ctx, task, err)
-		return outcome, err
+		return e.fail(ctx, task, outcome, started, err)
 	}
 
 	report, repairs, err := e.verifyAndRepair(ctx, task)
 	outcome.Report = report
 	outcome.Repairs = repairs
 	if err != nil {
-		e.recordFailure(ctx, task, err)
-		return outcome, err
+		return e.fail(ctx, task, outcome, started, err)
 	}
 
 	// Review runs after the gates, not before: there is no point spending
@@ -218,15 +234,13 @@ func (e *Executor) Run(ctx context.Context, task interfaces.BacklogTask) (*Outco
 		outcome.Report = reviewed.report
 	}
 	if reviewed.err != nil {
-		e.recordFailure(ctx, task, reviewed.err)
-		return outcome, reviewed.err
+		return e.fail(ctx, task, outcome, started, reviewed.err)
 	}
 
 	if e.cfg.AutoCommit {
 		hash, err := e.commit(ctx, task)
 		if err != nil {
-			e.recordFailure(ctx, task, err)
-			return outcome, err
+			return e.fail(ctx, task, outcome, started, err)
 		}
 		outcome.Committed = hash != ""
 		outcome.CommitHash = hash
@@ -237,6 +251,7 @@ func (e *Executor) Run(ctx context.Context, task interfaces.BacklogTask) (*Outco
 	}
 
 	outcome.Duration = time.Since(started)
+	e.recordMetrics(task.ID, outcome.Duration, nil)
 
 	id, err := e.checkpoint(ctx, task, StageDone, 1.0, outcome.CommitHash)
 	if err != nil {
@@ -595,6 +610,60 @@ func (e *Executor) updateStage(
 	}
 
 	return nil
+}
+
+// fail is the single exit for a run that did not complete: it records the
+// duration the attempt cost, preserves the reason, and reports the failure to
+// metrics. Routing every failure through one place is what keeps a new failure
+// path from silently skipping one of the three.
+func (e *Executor) fail(
+	ctx context.Context,
+	task interfaces.BacklogTask,
+	outcome *Outcome,
+	started time.Time,
+	cause error,
+) (*Outcome, error) {
+	outcome.Duration = time.Since(started)
+	e.recordFailure(ctx, task, cause)
+	e.recordMetrics(task.ID, outcome.Duration, cause)
+	return outcome, cause
+}
+
+// recordMetrics reports how a run ended. A nil cause means success.
+//
+// The failure reason is the sentinel's name rather than the full error text:
+// metric tags with unbounded cardinality (a file path, a compiler message)
+// turn a counter into a memory leak, and "which kind of failure" is the
+// question a metric can actually answer.
+func (e *Executor) recordMetrics(taskID string, duration time.Duration, cause error) {
+	if e.metrics == nil {
+		return
+	}
+
+	e.metrics.RecordTaskDuration(taskID, duration)
+
+	if cause == nil {
+		e.metrics.RecordTaskSuccess(taskID)
+		return
+	}
+
+	e.metrics.RecordTaskFailure(taskID, failureReason(cause))
+}
+
+// failureReason classifies an error into a bounded set of metric labels.
+func failureReason(err error) string {
+	switch {
+	case errors.Is(err, ErrGatesFailed):
+		return "gates"
+	case errors.Is(err, ErrReviewRejected):
+		return "review"
+	case errors.Is(err, ErrDirtyTree):
+		return "dirty-tree"
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return "cancelled"
+	default:
+		return "error"
+	}
 }
 
 // recordFailure preserves what went wrong so a later run, or a human, can see

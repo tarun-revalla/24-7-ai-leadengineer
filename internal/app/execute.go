@@ -53,16 +53,16 @@ func (a *App) Executor() (*executor.Executor, error) {
 		reviewer = review.New(claudeReviewSession{a.Claude})
 	}
 
-	return executor.New(
-		cfg,
-		a.Claude,
-		a.Git,
-		a.Memory,
-		a.Checkpoints,
-		gates.NewRunner(gateList...),
-		reviewer,
-		a.Logger,
-	), nil
+	return executor.New(cfg, executor.Deps{
+		Claude:      a.Claude,
+		Git:         a.Git,
+		Memory:      a.Memory,
+		Checkpoints: a.Checkpoints,
+		Gates:       gates.NewRunner(gateList...),
+		Reviewer:    reviewer,
+		Metrics:     a.Metrics,
+		Log:         a.Logger,
+	}), nil
 }
 
 // claudeReviewSession adapts the session manager to the narrow interface the

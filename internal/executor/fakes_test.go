@@ -394,6 +394,56 @@ func (r *fakeReviewer) diffAt(i int) string {
 	return r.diffs[i]
 }
 
+// fakeMetrics records what the executor reported.
+type fakeMetrics struct {
+	mu        sync.Mutex
+	durations map[string]time.Duration
+	successes []string
+	failures  map[string]string
+}
+
+func (m *fakeMetrics) RecordTaskDuration(taskID string, d time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.durations == nil {
+		m.durations = map[string]time.Duration{}
+	}
+	m.durations[taskID] = d
+}
+
+func (m *fakeMetrics) RecordTaskSuccess(taskID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.successes = append(m.successes, taskID)
+}
+
+func (m *fakeMetrics) RecordTaskFailure(taskID, reason string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.failures == nil {
+		m.failures = map[string]string{}
+	}
+	m.failures[taskID] = reason
+}
+
+func (m *fakeMetrics) successCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.successes)
+}
+
+func (m *fakeMetrics) failureReason(taskID string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.failures[taskID]
+}
+
+func (m *fakeMetrics) duration(taskID string) time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.durations[taskID]
+}
+
 // discardLogger swallows log output.
 type discardLogger struct{}
 

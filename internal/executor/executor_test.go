@@ -18,6 +18,7 @@ type harness struct {
 	memory      *fakeMemory
 	checkpoints *fakeCheckpoints
 	reviewer    *fakeReviewer
+	metrics     *fakeMetrics
 }
 
 // newHarness builds an executor with review disabled, so the many tests
@@ -54,12 +55,20 @@ func newHarnessWithReviewer(
 		rev = reviewer
 	}
 
+	h.metrics = &fakeMetrics{}
+
 	h.exec = New(
 		Config{MaxRepairAttempts: 2, MaxReviewAttempts: 2, AutoCommit: true, ProjectPath: t.TempDir()},
-		h.claude, h.git, h.memory, h.checkpoints,
-		gates.NewRunner(gateList...),
-		rev,
-		discardLogger{},
+		Deps{
+			Claude:      h.claude,
+			Git:         h.git,
+			Memory:      h.memory,
+			Checkpoints: h.checkpoints,
+			Gates:       gates.NewRunner(gateList...),
+			Reviewer:    rev,
+			Metrics:     h.metrics,
+			Log:         discardLogger{},
+		},
 	)
 
 	return h
@@ -663,5 +672,107 @@ func TestReviewRepairPromptCarriesTheFindings(t *testing.T) {
 	}
 	if !strings.Contains(revision, "Do not commit") {
 		t.Errorf("the revision prompt must not authorise a commit:\n%s", revision)
+	}
+}
+
+// --- metrics ---
+
+func TestSuccessfulRunRecordsMetrics(t *testing.T) {
+	h := newHarness(t, []gates.Gate{passingGate()}, sampleTask("T-1", 1))
+
+	if _, err := h.exec.Run(context.Background(), sampleTask("T-1", 1)); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if h.metrics.successCount() != 1 {
+		t.Errorf("successes: got %d, want 1", h.metrics.successCount())
+	}
+	if h.metrics.duration("T-1") <= 0 {
+		t.Error("a completed run should record a non-zero duration")
+	}
+	if reason := h.metrics.failureReason("T-1"); reason != "" {
+		t.Errorf("a successful run recorded a failure: %q", reason)
+	}
+}
+
+// The failure label must classify the kind of failure, not echo the error
+// text: an unbounded tag turns a counter into a memory leak.
+func TestFailureMetricsAreClassified(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*harness)
+		want  string
+	}{
+		{
+			name: "failing gates",
+			setup: func(h *harness) {
+				h.exec.gates = gates.NewRunner(&scriptedGate{name: "test", failUntil: 1000})
+			},
+			want: "gates",
+		},
+		{
+			name: "implementation error",
+			setup: func(h *harness) {
+				h.claude.results = []claudeReply{failReply("claude crashed")}
+			},
+			want: "error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t, []gates.Gate{passingGate()}, sampleTask("T-1", 1))
+			tt.setup(h)
+
+			if _, err := h.exec.Run(context.Background(), sampleTask("T-1", 1)); err == nil {
+				t.Fatal("expected the run to fail")
+			}
+
+			if got := h.metrics.failureReason("T-1"); got != tt.want {
+				t.Errorf("failure reason: got %q, want %q", got, tt.want)
+			}
+			if h.metrics.successCount() != 0 {
+				t.Error("a failed run must not be recorded as a success")
+			}
+		})
+	}
+}
+
+func TestRejectedReviewIsRecordedAsAReviewFailure(t *testing.T) {
+	rev := &fakeReviewer{rejectUntil: 1000}
+	h := newHarnessWithReviewer(t, []gates.Gate{passingGate()}, rev, sampleTask("T-1", 1))
+
+	if _, err := h.exec.Run(context.Background(), sampleTask("T-1", 1)); err == nil {
+		t.Fatal("expected the run to fail")
+	}
+
+	if got := h.metrics.failureReason("T-1"); got != "review" {
+		t.Errorf("failure reason: got %q, want review", got)
+	}
+}
+
+// A failed run's duration is as much a cost as a successful one's; leaving it
+// unrecorded would make the metrics report only the work that went well.
+func TestFailedRunRecordsItsDuration(t *testing.T) {
+	alwaysFails := &scriptedGate{name: "test", failUntil: 1000}
+	h := newHarness(t, []gates.Gate{alwaysFails}, sampleTask("T-1", 1))
+
+	outcome, _ := h.exec.Run(context.Background(), sampleTask("T-1", 1))
+
+	if outcome.Duration <= 0 {
+		t.Error("a failed run should still report how long it took")
+	}
+	if h.metrics.duration("T-1") <= 0 {
+		t.Error("a failed run's duration should still reach metrics")
+	}
+}
+
+// Metrics are optional; a nil collector must not panic the pipeline.
+func TestNilMetricsIsSafe(t *testing.T) {
+	h := newHarness(t, []gates.Gate{passingGate()}, sampleTask("T-1", 1))
+	h.exec.metrics = nil
+
+	if _, err := h.exec.Run(context.Background(), sampleTask("T-1", 1)); err != nil {
+		t.Fatalf("a run without metrics should still succeed: %v", err)
 	}
 }
