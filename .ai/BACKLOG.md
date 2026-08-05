@@ -57,20 +57,20 @@ tasks:
       createdAt: 2026-08-05T09:49:10.833894449Z
       updatedAt: 0001-01-01T00:00:00Z
     - id: PHASE5-002
-      title: Project scanner
-      description: Detect project type, build system and test layout instead of relying on project.type in configuration.
+      title: Automatic toolchain detection on init
+      description: '`leadengineer detect` exists but must be run by hand; init could offer it when no toolchain is declared.'
       priority: 6
       status: new
       createdAt: 2026-08-05T09:49:10.833894449Z
-      updatedAt: 0001-01-01T00:00:00Z
+      updatedAt: 2026-08-05T16:39:35.234846713Z
     - id: PHASE5-003
       title: Quality gates for Python and Rust
       description: Node and Go gate sets exist. Python and Rust are accepted by config validation but have no gates, so the executor refuses to run.
       priority: 6
-      status: new
+      status: done
       createdAt: 2026-08-05T09:49:10.833894449Z
-      updatedAt: 2026-08-05T10:16:24.947147436Z
-updatedAt: 2026-08-05T10:16:24.947794363Z
+      updatedAt: 2026-08-05T16:39:35.234846713Z
+updatedAt: 2026-08-05T16:39:35.235781778Z
 ---
 
 # Product Backlog

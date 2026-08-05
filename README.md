@@ -66,6 +66,9 @@ leadengineer checkpoint prune --keep 7
 leadengineer quota status
 leadengineer quota clear
 
+# Work out how this project verifies itself and record it.
+leadengineer detect
+
 # Effective configuration, after defaults, file and environment are merged.
 leadengineer config show
 ```
@@ -86,6 +89,7 @@ pull request like anything else.
 | `BACKLOG.md` | Tasks with priority and status |
 | `CURRENT.md` | The task in flight, its stage and progress |
 | `CHANGELOG.md` | Completed work, newest first |
+| `TOOLCHAIN.md` | The commands that verify this project |
 | `DECISIONS.md` | Architecture decisions |
 | `checkpoints/` | Compressed, checksummed recovery snapshots |
 | `logs/` | Structured JSON logs |
@@ -96,8 +100,40 @@ document.
 ## Quality gates
 
 Gates run against the whole project after Claude implements a task. Failures are handed back
-with the tools' own output, and the change is re-verified after every repair. The gate set is
-chosen from `project.type`.
+with the tools' own output, and the change is re-verified after every repair.
+
+**Any language works.** Nothing about a particular language is compiled into the binary. A gate
+is a name, a command, and whether a missing tool blocks — so Rust, Elixir, Zig, a Makefile
+target or a polyglot monorepo are all first-class. Run `leadengineer detect` and it reads the
+repository's manifests, build files and CI config and writes the commands to `.ai/TOOLCHAIN.md`:
+
+```yaml
+---
+language: rust
+gates:
+    - name: build
+      command: [cargo, build, --all-targets]
+      required: true
+      expectation: compile with cargo build
+    - name: test
+      command: [cargo, test, --all-features]
+      required: true
+    - name: lint
+      command: [cargo, clippy, --all-targets, --, -D, warnings]
+      required: false
+---
+```
+
+Edit it by hand any time — a project's own contributors usually know the answer already. A
+declared toolchain beats the built-in sets below, which are just a convenience for the two
+most common cases.
+
+Commands are argv lists, not shell strings, so an argument containing spaces or
+metacharacters cannot change what executes.
+
+### Built-in sets
+
+Used when no toolchain is declared, chosen from `project.type`.
 
 **Go** (`project.type: go`)
 
@@ -165,6 +201,45 @@ breaks the build is not an improvement.
 
 Set `review.enabled: false` to run on gates alone.
 
+## Running without the project's tooling
+
+Sometimes the toolchain cannot run where the system runs — no compiler, no dependencies, a
+build that needs credentials the container does not have. Rather than being blocked entirely:
+
+```bash
+leadengineer start --inspect-only
+```
+
+No project tooling runs. Changes are checked by the review stage reading the diff, plus the
+secret scan, which needs no toolchain. Review is forced on in this mode regardless of
+`review.enabled` — with nothing else checking, disabling it too would make every task commit
+unconditionally.
+
+**This is a real reduction in assurance, not another route to the same one.** A model reading a
+diff can catch a wrong algorithm, a missing error path, an injection, an off-by-one. It cannot
+know the code compiles, that the tests pass, or that nothing else in the repository broke. Only
+running the tooling establishes those.
+
+So commits record what was actually checked:
+
+```
+WEB-014: Add rate limiting to the signup endpoint
+
+Verified-by: secrets
+```
+
+against a normally verified one:
+
+```
+WEB-014: Add rate limiting to the signup endpoint
+
+Verified-by: secrets, install, typecheck, build, test
+Not-checked: lint
+```
+
+The trailer is what lets someone reviewing a week of unattended commits tell them apart from
+the log alone. Set `quality.inspectionOnly: true` to make it the default for a project.
+
 ## Interruption and recovery
 
 A task left at status `in-progress` is the one state the executor never leaves behind on any
@@ -220,6 +295,7 @@ internal/
   executor/           the task pipeline
   gates/              quality gates
   review/             multi-perspective self-review
+  toolchain/          works out how a project verifies itself
   memory/             .ai/ document read/write
   checkpoint/         compressed, checksummed state snapshots
   recovery/           crash and interruption diagnosis
@@ -257,11 +333,7 @@ failure paths, not that the code ran.
 
 ## Not built
 
-Gate sets exist for Go and for JavaScript/TypeScript. Python and Rust are accepted by the
-config validator but have no gates yet, so the executor refuses to run rather than commit work
-nothing checked.
-
-Also deliberately out of scope, and listed here rather than implied by silence: the web
+Deliberately out of scope, and listed here rather than implied by silence: the web
 dashboard, the plugin system, multi-project support, multi-agent orchestration, and hosted
 integrations (GitHub, GitLab, Slack, Docker, Kubernetes). The `dashboard` and `plugins`
 sections in the default config are placeholders for these; nothing reads them yet.

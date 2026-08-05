@@ -1,6 +1,10 @@
 ---
 entries:
     - taskId: PHASE5-003
+      title: Language-agnostic verification
+      date: 2026-08-05T16:39:35.234846713Z
+      summary: Gates declared as data plus a detection agent, so any language works with no code change. Inspection mode for toolchains that cannot run; commits record what actually ran.
+    - taskId: PHASE5-003
       title: Quality gates for JavaScript and TypeScript
       date: 2026-08-05T10:16:24.947147436Z
       summary: Node gate set driven by package.json scripts; the implement prompt now states the bar the configured gates actually enforce rather than hardcoding Go.
@@ -52,7 +56,7 @@ entries:
       title: Configuration, logging and metrics
       date: 2026-08-05T03:51:38.270551246Z
       summary: Layered config with validation, structured logging, Prometheus metrics.
-updatedAt: 2026-08-05T10:16:24.94899137Z
+updatedAt: 2026-08-05T16:39:35.237307935Z
 ---
 
 # Changelog

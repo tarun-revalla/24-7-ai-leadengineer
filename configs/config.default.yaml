@@ -10,7 +10,11 @@ project:
   # Path to the project root
   path: "."
 
-  # Project type (go, node, python, rust, etc.)
+  # Project type, used only to pick a built-in gate set when no toolchain is
+  # declared in .ai/TOOLCHAIN.md. Built-in sets exist for "go" and for
+  # "node"/"javascript"/"typescript". Any other language works too — run
+  # `leadengineer detect`, which records that project's own commands and takes
+  # precedence over anything here.
   type: "go"
 
 # Claude Configuration
@@ -170,6 +174,15 @@ quality:
 
   # Run performance checks
   runPerformance: false
+
+  # Verify by reading the diff instead of running the project's tooling.
+  # A real reduction in assurance, not another route to the same one: a model
+  # reading a diff can catch a wrong algorithm or an injection, but cannot
+  # know the code compiles or that tests pass. Use it when the toolchain
+  # cannot run where this runs — being blocked entirely is worse. Commits
+  # record what was actually checked, so the two are distinguishable later.
+  # Equivalent to `leadengineer start --inspect-only`.
+  inspectionOnly: false
 
 # Self-Review
 # Runs after the quality gates pass and before the commit. The gates prove a
