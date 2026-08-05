@@ -4,52 +4,73 @@ tasks:
       title: Wire CLI commands to real subsystems
       description: init, status, checkpoint and config must operate on real state instead of returning nil.
       priority: 1
-      status: in-progress
+      status: done
       createdAt: 2026-08-05T03:51:38.270551246Z
-      updatedAt: 0001-01-01T00:00:00Z
+      updatedAt: 2026-08-05T09:49:10.833894449Z
     - id: PHASE3-002
       title: Quota manager with checkpoint-and-sleep
       description: Detect usage limits, checkpoint, sleep until the window resets, resume without human action.
       priority: 2
-      status: new
+      status: done
       createdAt: 2026-08-05T03:51:38.270551246Z
-      updatedAt: 0001-01-01T00:00:00Z
+      updatedAt: 2026-08-05T09:49:10.833894449Z
     - id: PHASE3-003
       title: Recovery manager
       description: On startup detect an interrupted task, restore the newest intact checkpoint, verify git state, resume.
       priority: 2
-      status: new
+      status: done
       createdAt: 2026-08-05T03:51:38.270551246Z
-      updatedAt: 0001-01-01T00:00:00Z
+      updatedAt: 2026-08-05T09:49:10.833894449Z
     - id: PHASE3-004
       title: Task executor with quality gates
       description: 'Run one task end to end: plan, implement via Claude, verify, self-review, commit.'
       priority: 3
-      status: new
+      status: done
       createdAt: 2026-08-05T03:51:38.270551246Z
-      updatedAt: 0001-01-01T00:00:00Z
+      updatedAt: 2026-08-05T09:49:10.833894449Z
     - id: PHASE3-005
       title: Integration test against the real Claude CLI
       description: Confirm the documented flags and JSON envelope match a real binary; parsing is defensive but unverified.
       priority: 3
-      status: new
+      status: done
       createdAt: 2026-08-05T03:51:38.270551246Z
-      updatedAt: 0001-01-01T00:00:00Z
+      updatedAt: 2026-08-05T09:49:10.833894449Z
     - id: PHASE4-001
       title: Quality gate runners
       description: gofmt, lint, vet, tests with coverage threshold, security scan.
       priority: 4
-      status: new
+      status: done
       createdAt: 2026-08-05T03:51:38.270551246Z
-      updatedAt: 0001-01-01T00:00:00Z
+      updatedAt: 2026-08-05T09:49:10.833894449Z
     - id: PHASE4-002
       title: Review engine
       description: Self-review across developer, reviewer, security, performance, QA and documentation perspectives.
       priority: 5
-      status: new
+      status: done
       createdAt: 2026-08-05T03:51:38.270551246Z
+      updatedAt: 2026-08-05T09:49:10.833894449Z
+    - id: PHASE5-001
+      title: Serve metrics over HTTP
+      description: Metrics are collected and Prometheus-formatted but nothing serves them; metrics.prometheusPort is unread.
+      priority: 5
+      status: new
+      createdAt: 2026-08-05T09:49:10.833894449Z
       updatedAt: 0001-01-01T00:00:00Z
-updatedAt: 2026-08-05T03:51:38.270552052Z
+    - id: PHASE5-002
+      title: Project scanner
+      description: Detect project type, build system and test layout instead of relying on project.type in configuration.
+      priority: 6
+      status: new
+      createdAt: 2026-08-05T09:49:10.833894449Z
+      updatedAt: 0001-01-01T00:00:00Z
+    - id: PHASE5-003
+      title: Quality gates for non-Go projects
+      description: Node, Python and Rust gate sets. The executor currently refuses to run rather than commit unverified work.
+      priority: 6
+      status: new
+      createdAt: 2026-08-05T09:49:10.833894449Z
+      updatedAt: 0001-01-01T00:00:00Z
+updatedAt: 2026-08-05T09:49:10.834343694Z
 ---
 
 # Product Backlog

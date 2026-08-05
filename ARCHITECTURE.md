@@ -16,6 +16,54 @@ An autonomous software engineering system that uses Claude Code as its execution
 
 ---
 
+## Implementation status
+
+This document is the design. It describes twenty subsystems; twelve of them exist. The table
+below says which, so nothing here has to be read as a claim about what is built. Where the
+implementation diverged from this design, the implementation is right and the reason is given.
+
+| Designed subsystem | Status | Where |
+| --- | --- | --- |
+| 1. Configuration Manager | built | `internal/config` |
+| 2. Project Scanner & Analyzer | not built | — |
+| 3. Project Memory | built | `internal/memory` |
+| 4. Claude Session Manager | built | `internal/claude` |
+| 5. Checkpoint Manager | built | `internal/checkpoint` |
+| 6. Git Manager | built | `internal/git` |
+| 7. Planner & Task Prioritizer | partial | priority ordering lives in `internal/executor`; no separate planner |
+| 8. Task Queue & Executor | built | `internal/executor` |
+| 9. Claude Runner | merged into 4 | `internal/claude` |
+| 10. Prompt Library | distributed | prompts live with the subsystem that owns them (`executor/prompts.go`, `review/prompt.go`) |
+| 11. Review Engine | built | `internal/review` |
+| 12. Testing Engine | merged into gates | the `test` gate in `internal/gates` |
+| 13. Security Engine | merged into gates | the `secrets` and `security` gates in `internal/gates` |
+| 14. Quota Manager | built | `internal/quota` |
+| 15. Recovery Manager | built, narrower | `internal/recovery` — diagnostic only, see below |
+| 16. Logging & Metrics | built | `internal/logging`, `internal/metrics` |
+| 17. Progress Reporter | partial | `status` and `recover` CLI output; no separate reporter |
+| 18. Scheduler & Timing | not built | — |
+| 19. Plugin Manager | not built | — |
+| 20. Web Dashboard API | not built | — |
+
+Three divergences are deliberate and worth stating rather than leaving to be discovered:
+
+**The Recovery Manager does not restore.** This document describes it restoring the newest
+intact checkpoint and resuming. As built it diagnoses and reports, and performs no destructive
+git operation. Guessing wrong about uncommitted changes destroys work that was never recorded
+anywhere, and the cost of that is asymmetric against the convenience of not typing a command.
+It reports what was interrupted and what the tree looks like; a human decides.
+
+**Testing and Security are gates, not engines.** Both were designed as subsystems that would
+plan and orchestrate. Both turned out to be a command, its output, and a pass/fail rule, which
+is what the `Gate` interface already is. A separate engine around each would have been
+structure with nothing inside it.
+
+**Prompts are not centralized.** A prompt library separates a prompt from the code that
+depends on its exact output shape. The review prompt specifies a JSON contract that
+`review.ParseReview` enforces; keeping them apart would let one drift from the other silently.
+
+---
+
 ## System Architecture Overview
 
 ```
