@@ -1,5 +1,7 @@
 package memory
 
+import "github.com/tarun-revalla/24-7-ai-leadengineer/pkg/interfaces"
+
 // Default bodies seed a memory document the first time it is written.
 //
 // The body is prose for humans and for Claude's context; the front matter above
@@ -56,3 +58,20 @@ const defaultEngineeringBody = `# Engineering Standards
 Conventions this project holds itself to: formatting, linting, test coverage,
 commit style, and the quality gates every task must pass before it is committed.
 `
+
+// DefaultRoadmapBody returns the seed content for a new ROADMAP.md.
+func DefaultRoadmapBody() string { return defaultRoadmapBody }
+
+// DefaultEngineeringBody returns the seed content for a new ENGINEERING.md.
+func DefaultEngineeringBody() string { return defaultEngineeringBody }
+
+// EmptyDecisionsDocument returns a DECISIONS.md holding no decisions.
+func EmptyDecisionsDocument() string {
+	rendered, err := renderDocument(&decisionSet{Decisions: []interfaces.Decision{}}, defaultDecisionsBody)
+	if err != nil {
+		// The input is a fixed literal, so encoding cannot fail in practice;
+		// returning the body alone still yields a valid, readable file.
+		return defaultDecisionsBody
+	}
+	return rendered
+}
