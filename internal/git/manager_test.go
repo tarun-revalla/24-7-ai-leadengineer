@@ -196,7 +196,7 @@ func TestManagerGetConflictedFiles(t *testing.T) {
 		t.Fatalf("GetConflictedFiles failed: %v", err)
 	}
 
-	if files != nil && len(files) > 0 {
+	if len(files) > 0 {
 		t.Error("Should not have conflicted files initially")
 	}
 }

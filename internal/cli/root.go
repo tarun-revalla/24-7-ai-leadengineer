@@ -77,7 +77,7 @@ func newStartCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer a.Close()
+			defer func() { _ = a.Close() }()
 
 			if once {
 				maxTasks = 1
@@ -91,24 +91,24 @@ func newStartCommand(flags *globalFlags) *cobra.Command {
 				if o.Committed {
 					status = "committed " + shortHash(o.CommitHash)
 				}
-				fmt.Fprintf(out, "%-12s %s  (%s", o.Task.ID, o.Task.Title, status)
+				_, _ = fmt.Fprintf(out, "%-12s %s  (%s", o.Task.ID, o.Task.Title, status)
 				if o.Repairs > 0 {
-					fmt.Fprintf(out, ", %d repair(s)", o.Repairs)
+					_, _ = fmt.Fprintf(out, ", %d repair(s)", o.Repairs)
 				}
-				fmt.Fprintf(out, ", %s)\n", o.Duration.Truncate(time.Millisecond))
+				_, _ = fmt.Fprintf(out, ", %s)\n", o.Duration.Truncate(time.Millisecond))
 			}
 
 			if runErr != nil {
 				// A partial run is still progress; report what completed
 				// before surfacing why it stopped.
 				if len(outcomes) > 0 {
-					fmt.Fprintf(out, "\n%d task(s) completed before stopping.\n", len(outcomes))
+					_, _ = fmt.Fprintf(out, "\n%d task(s) completed before stopping.\n", len(outcomes))
 				}
 				return runErr
 			}
 
 			if len(outcomes) == 0 {
-				fmt.Fprintln(out, "No open tasks in the backlog.")
+				_, _ = fmt.Fprintln(out, "No open tasks in the backlog.")
 			}
 
 			return nil
@@ -144,14 +144,14 @@ func newRecoverCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer a.Close()
+			defer func() { _ = a.Close() }()
 
 			report, err := a.Recover(cmd.Context())
 			if err != nil {
 				return err
 			}
 
-			fmt.Fprint(cmd.OutOrStdout(), report.Render())
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), report.Render())
 
 			if report.Interrupted && !report.SafeToResume {
 				// A silent zero exit here would let an automated caller

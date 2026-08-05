@@ -133,7 +133,9 @@ func gunzipBytes(in []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open compressed checkpoint: %w", err)
 	}
-	defer zr.Close()
+	// A failure closing the reader after a successful decompression is not
+	// actionable — the bytes are already read.
+	defer func() { _ = zr.Close() }()
 
 	out, err := io.ReadAll(io.LimitReader(zr, maxDecompressed))
 	if err != nil {

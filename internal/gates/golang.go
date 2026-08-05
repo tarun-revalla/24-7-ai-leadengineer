@@ -13,16 +13,21 @@ import (
 
 // GoGates returns the standard checks for a Go project, in the order a
 // developer would want them: cheap structural checks first, so an obvious
-// break is reported in seconds rather than after a full test run.
+// break is reported in seconds rather than after a full test run. SecretScan
+// runs early alongside format for the same reason — it is a pure file read,
+// no compilation required — and because a leaked credential is worth knowing
+// about before spending time on anything else.
 //
 // minCoverage of 0 disables the coverage threshold.
 func GoGates(minCoverage float64) []Gate {
 	return []Gate{
 		GoFormat{},
+		SecretScan{},
 		GoBuild{},
 		GoVet{},
 		GoTest{MinCoverage: minCoverage},
 		GolangCILint{},
+		GoSecurity{},
 	}
 }
 
@@ -240,6 +245,38 @@ func (g GolangCILint) Run(ctx context.Context, dir string) Result {
 		return Result{
 			Gate: g.Name(), Status: StatusFailed, Duration: time.Since(started),
 			Detail: "lint reported problems", Output: out,
+		}
+	}
+
+	return Result{Gate: g.Name(), Status: StatusPassed, Duration: time.Since(started)}
+}
+
+// GoSecurity runs gosec's static security analysis when it is installed.
+//
+// Optional, unlike SecretScan: gosec is a separate binary a deployment may
+// not have installed, and its absence must be visible rather than silently
+// treated as "no issues" — but it should not block a project that has not
+// set it up. Where gosec looks for coding patterns known to be risky
+// (unchecked errors on security-relevant calls, weak crypto, command
+// injection shapes), SecretScan looks for already-leaked credentials; they
+// catch different things and neither substitutes for the other.
+type GoSecurity struct{}
+
+func (GoSecurity) Name() string   { return "security" }
+func (GoSecurity) Required() bool { return false }
+
+func (g GoSecurity) Run(ctx context.Context, dir string) Result {
+	started := time.Now()
+
+	if !toolAvailable("gosec") {
+		return missing(g, "gosec", started)
+	}
+
+	out, err := command{"gosec", []string{"-quiet", "./..."}}.run(ctx, dir)
+	if err != nil {
+		return Result{
+			Gate: g.Name(), Status: StatusFailed, Duration: time.Since(started),
+			Detail: "gosec reported findings", Output: out,
 		}
 	}
 

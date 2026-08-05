@@ -22,7 +22,7 @@ func newInitCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer a.Close()
+			defer func() { _ = a.Close() }()
 
 			result, err := a.Initialize(cmd.Context(), name)
 			if err != nil {
@@ -30,17 +30,17 @@ func newInitCommand(flags *globalFlags) *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "Initialised %s\n", a.StatePath())
+			_, _ = fmt.Fprintf(out, "Initialised %s\n", a.StatePath())
 
 			for _, f := range result.Created {
-				fmt.Fprintf(out, "  created  %s\n", f)
+				_, _ = fmt.Fprintf(out, "  created  %s\n", f)
 			}
 			for _, f := range result.Skipped {
-				fmt.Fprintf(out, "  kept     %s\n", f)
+				_, _ = fmt.Fprintf(out, "  kept     %s\n", f)
 			}
 
 			if len(result.Created) == 0 {
-				fmt.Fprintln(out, "\nAlready initialised; nothing changed.")
+				_, _ = fmt.Fprintln(out, "\nAlready initialised; nothing changed.")
 			}
 			return nil
 		},
@@ -60,10 +60,10 @@ func newStatusCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer a.Close()
+			defer func() { _ = a.Close() }()
 
 			status := a.Status(cmd.Context())
-			fmt.Fprint(cmd.OutOrStdout(), status.Render())
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), status.Render())
 			return nil
 		},
 	}
@@ -95,19 +95,19 @@ func newCheckpointListCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer a.Close()
+			defer func() { _ = a.Close() }()
 
 			list, err := a.Checkpoints.ListCheckpoints(cmd.Context())
 			if err != nil {
 				return err
 			}
 			if len(list) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No checkpoints recorded.")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No checkpoints recorded.")
 				return nil
 			}
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ID\tTAKEN\tTASK\tSIZE\tSTATE")
+			_, _ = fmt.Fprintln(w, "ID\tTAKEN\tTASK\tSIZE\tSTATE")
 
 			for _, md := range list {
 				state := "ok"
@@ -120,7 +120,7 @@ func newCheckpointListCommand(flags *globalFlags) *cobra.Command {
 					task = "-"
 				}
 
-				fmt.Fprintf(w, "%s\t%s\t%s\t%d B\t%s\n",
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d B\t%s\n",
 					md.ID, md.Timestamp.Format("2006-01-02 15:04:05"), task, md.Size, state)
 			}
 
@@ -139,7 +139,7 @@ func newCheckpointShowCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer a.Close()
+			defer func() { _ = a.Close() }()
 
 			state, err := a.Checkpoints.LoadCheckpoint(cmd.Context(), args[0])
 			if err != nil {
@@ -147,17 +147,17 @@ func newCheckpointShowCommand(flags *globalFlags) *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "ID:        %s\n", state.ID)
-			fmt.Fprintf(out, "Taken:     %s\n", state.Timestamp.Format("2006-01-02 15:04:05 MST"))
-			fmt.Fprintf(out, "Task:      %s\n", orDash(state.TaskID))
-			fmt.Fprintf(out, "State:     %s\n", orDash(state.TaskState))
-			fmt.Fprintf(out, "Progress:  %.0f%%\n", state.Progress*100)
-			fmt.Fprintf(out, "Commit:    %s\n", orDash(state.GitCommit))
+			_, _ = fmt.Fprintf(out, "ID:        %s\n", state.ID)
+			_, _ = fmt.Fprintf(out, "Taken:     %s\n", state.Timestamp.Format("2006-01-02 15:04:05 MST"))
+			_, _ = fmt.Fprintf(out, "Task:      %s\n", orDash(state.TaskID))
+			_, _ = fmt.Fprintf(out, "State:     %s\n", orDash(state.TaskState))
+			_, _ = fmt.Fprintf(out, "Progress:  %.0f%%\n", state.Progress*100)
+			_, _ = fmt.Fprintf(out, "Commit:    %s\n", orDash(state.GitCommit))
 
 			if q := state.QuotaState; q != nil {
-				fmt.Fprintf(out, "Quota:     %.0f%% remaining\n", q.Remaining*100)
+				_, _ = fmt.Fprintf(out, "Quota:     %.0f%% remaining\n", q.Remaining*100)
 				if !q.ResetTime.IsZero() {
-					fmt.Fprintf(out, "Resets:    %s\n", q.ResetTime.Format("2006-01-02 15:04:05 MST"))
+					_, _ = fmt.Fprintf(out, "Resets:    %s\n", q.ResetTime.Format("2006-01-02 15:04:05 MST"))
 				}
 			}
 
@@ -176,7 +176,7 @@ func newCheckpointVerifyCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer a.Close()
+			defer func() { _ = a.Close() }()
 
 			list, err := a.Checkpoints.ListCheckpoints(cmd.Context())
 			if err != nil {
@@ -189,13 +189,13 @@ func newCheckpointVerifyCommand(flags *globalFlags) *cobra.Command {
 			for _, md := range list {
 				if err := a.Checkpoints.ValidateCheckpoint(cmd.Context(), md.ID); err != nil {
 					corrupt++
-					fmt.Fprintf(out, "CORRUPT  %s: %v\n", md.ID, err)
+					_, _ = fmt.Fprintf(out, "CORRUPT  %s: %v\n", md.ID, err)
 					continue
 				}
-				fmt.Fprintf(out, "ok       %s\n", md.ID)
+				_, _ = fmt.Fprintf(out, "ok       %s\n", md.ID)
 			}
 
-			fmt.Fprintf(out, "\n%d checkpoint(s), %d corrupt\n", len(list), corrupt)
+			_, _ = fmt.Fprintf(out, "\n%d checkpoint(s), %d corrupt\n", len(list), corrupt)
 
 			if corrupt > 0 {
 				// Recovery skips corrupt checkpoints, so this is not fatal —
@@ -219,7 +219,7 @@ func newCheckpointPruneCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer a.Close()
+			defer func() { _ = a.Close() }()
 
 			if keep <= 0 {
 				keep = a.Config.GetInt("checkpoint.retention")
@@ -239,7 +239,7 @@ func newCheckpointPruneCommand(flags *globalFlags) *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Removed %d checkpoint(s); %d retained.\n",
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Removed %d checkpoint(s); %d retained.\n",
 				len(before)-len(after), len(after))
 			return nil
 		},
@@ -264,26 +264,26 @@ func newConfigCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer a.Close()
+			defer func() { _ = a.Close() }()
 
 			spec := a.Config.GetSpec()
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 
-			fmt.Fprintf(w, "project.name\t%s\n", spec.Project.Name)
-			fmt.Fprintf(w, "project.type\t%s\n", spec.Project.Type)
-			fmt.Fprintf(w, "claude.enabled\t%t\n", spec.Claude.Enabled)
-			fmt.Fprintf(w, "claude.model\t%s\n", spec.Claude.Model)
-			fmt.Fprintf(w, "claude.maxRetries\t%d\n", spec.Claude.MaxRetries)
-			fmt.Fprintf(w, "claude.timeoutSeconds\t%d\n", spec.Claude.TimeoutSeconds)
-			fmt.Fprintf(w, "quota.warningThreshold\t%.2f\n", spec.Quota.WarningThreshold)
-			fmt.Fprintf(w, "quota.exhaustionThreshold\t%.2f\n", spec.Quota.ExhaustionThreshold)
-			fmt.Fprintf(w, "quota.autoSleepOnExhaustion\t%t\n", spec.Quota.AutoSleepOnExhaustion)
-			fmt.Fprintf(w, "checkpoint.retention\t%d\n", spec.Checkpoint.Retention)
-			fmt.Fprintf(w, "checkpoint.compression\t%t\n", spec.Checkpoint.Compression)
-			fmt.Fprintf(w, "git.committerName\t%s\n", spec.Git.CommitterName)
-			fmt.Fprintf(w, "git.committerEmail\t%s\n", spec.Git.CommitterEmail)
-			fmt.Fprintf(w, "logging.level\t%s\n", spec.Logging.Level)
-			fmt.Fprintf(w, "logging.format\t%s\n", spec.Logging.Format)
+			_, _ = fmt.Fprintf(w, "project.name\t%s\n", spec.Project.Name)
+			_, _ = fmt.Fprintf(w, "project.type\t%s\n", spec.Project.Type)
+			_, _ = fmt.Fprintf(w, "claude.enabled\t%t\n", spec.Claude.Enabled)
+			_, _ = fmt.Fprintf(w, "claude.model\t%s\n", spec.Claude.Model)
+			_, _ = fmt.Fprintf(w, "claude.maxRetries\t%d\n", spec.Claude.MaxRetries)
+			_, _ = fmt.Fprintf(w, "claude.timeoutSeconds\t%d\n", spec.Claude.TimeoutSeconds)
+			_, _ = fmt.Fprintf(w, "quota.warningThreshold\t%.2f\n", spec.Quota.WarningThreshold)
+			_, _ = fmt.Fprintf(w, "quota.exhaustionThreshold\t%.2f\n", spec.Quota.ExhaustionThreshold)
+			_, _ = fmt.Fprintf(w, "quota.autoSleepOnExhaustion\t%t\n", spec.Quota.AutoSleepOnExhaustion)
+			_, _ = fmt.Fprintf(w, "checkpoint.retention\t%d\n", spec.Checkpoint.Retention)
+			_, _ = fmt.Fprintf(w, "checkpoint.compression\t%t\n", spec.Checkpoint.Compression)
+			_, _ = fmt.Fprintf(w, "git.committerName\t%s\n", spec.Git.CommitterName)
+			_, _ = fmt.Fprintf(w, "git.committerEmail\t%s\n", spec.Git.CommitterEmail)
+			_, _ = fmt.Fprintf(w, "logging.level\t%s\n", spec.Logging.Level)
+			_, _ = fmt.Fprintf(w, "logging.format\t%s\n", spec.Logging.Format)
 
 			return w.Flush()
 		},
@@ -314,7 +314,7 @@ func newQuotaCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer a.Close()
+			defer func() { _ = a.Close() }()
 
 			ctx := cmd.Context()
 			state := a.Quota.Current(ctx)
@@ -322,19 +322,19 @@ func newQuotaCommand(flags *globalFlags) *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			if available {
-				fmt.Fprintln(out, "Quota available.")
+				_, _ = fmt.Fprintln(out, "Quota available.")
 				if state.ConsecutiveHits > 0 {
-					fmt.Fprintf(out, "Last limit hit %s.\n", state.DetectedAt.Format(time.RFC3339))
+					_, _ = fmt.Fprintf(out, "Last limit hit %s.\n", state.DetectedAt.Format(time.RFC3339))
 				}
 				return nil
 			}
 
-			fmt.Fprintf(out, "In cooldown for another %s.\n", remaining.Truncate(time.Second))
-			fmt.Fprintf(out, "Resumes:    %s\n", state.ResumeAt.Format(time.RFC3339))
-			fmt.Fprintf(out, "Detected:   %s\n", state.DetectedAt.Format(time.RFC3339))
-			fmt.Fprintf(out, "Reason:     %s\n", orDash(state.Reason))
-			fmt.Fprintf(out, "Hits:       %d consecutive\n", state.ConsecutiveHits)
-			fmt.Fprintf(out, "Checkpoint: %s\n", orDash(state.LastCheckpoint))
+			_, _ = fmt.Fprintf(out, "In cooldown for another %s.\n", remaining.Truncate(time.Second))
+			_, _ = fmt.Fprintf(out, "Resumes:    %s\n", state.ResumeAt.Format(time.RFC3339))
+			_, _ = fmt.Fprintf(out, "Detected:   %s\n", state.DetectedAt.Format(time.RFC3339))
+			_, _ = fmt.Fprintf(out, "Reason:     %s\n", orDash(state.Reason))
+			_, _ = fmt.Fprintf(out, "Hits:       %d consecutive\n", state.ConsecutiveHits)
+			_, _ = fmt.Fprintf(out, "Checkpoint: %s\n", orDash(state.LastCheckpoint))
 			return nil
 		},
 	})
@@ -352,11 +352,11 @@ func newQuotaCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer a.Close()
+			defer func() { _ = a.Close() }()
 
 			ctx := cmd.Context()
 			if available, _ := a.Quota.Available(ctx); available {
-				fmt.Fprintln(cmd.OutOrStdout(), "No cooldown in force; nothing to clear.")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No cooldown in force; nothing to clear.")
 				return nil
 			}
 
@@ -364,7 +364,7 @@ func newQuotaCommand(flags *globalFlags) *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "Cooldown cleared; work may resume.")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Cooldown cleared; work may resume.")
 			return nil
 		},
 	}

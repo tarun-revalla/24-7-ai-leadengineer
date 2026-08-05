@@ -1,0 +1,23 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+
+  exclusions:
+    rules:
+      # Test setup and helper calls (writing a fixture file, seeding a
+      # backlog, saving state before an assertion) routinely ignore the
+      # returned error: a failure there surfaces anyway, as the test's own
+      # subsequent assertion failing with a less specific message. Requiring
+      # every one of these to be individually checked adds boilerplate
+      # without a matching gain in real safety, since nothing here runs in
+      # production. Every other linter, and errcheck everywhere outside
+      # tests, still applies at full strength.
+      - path: _test\.go
+        linters:
+          - errcheck

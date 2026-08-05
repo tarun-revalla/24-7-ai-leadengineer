@@ -40,12 +40,14 @@ func Write(path string, data []byte, perm os.FileMode) error {
 	}()
 
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		// The write already failed; a second failure closing the file we are
+		// about to delete via the deferred Remove above is not actionable.
+		_ = tmp.Close()
 		return fmt.Errorf("failed to write %s: %w", path, err)
 	}
 
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("failed to flush %s: %w", path, err)
 	}
 
@@ -77,7 +79,7 @@ func syncDir(dir string) {
 	if err != nil {
 		return
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	_ = d.Sync()
 }

@@ -26,10 +26,6 @@ type claudeReply struct {
 	err    error
 }
 
-func okReply() claudeReply {
-	return claudeReply{result: &interfaces.SessionResult{Output: "done"}}
-}
-
 func errorReply(msg string) claudeReply {
 	return claudeReply{result: &interfaces.SessionResult{Errors: []string{msg}}}
 }
