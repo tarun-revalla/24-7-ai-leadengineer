@@ -199,28 +199,37 @@ func (g GoTest) Run(ctx context.Context, dir string) Result {
 		return Result{Gate: g.Name(), Status: StatusPassed, Duration: time.Since(started)}
 	}
 
-	coverage, measured := parseCoverage(out)
-	if !measured {
-		// Every package lacking tests is itself a coverage failure when a
-		// floor is configured; reporting it as passing would hide the gap.
+	cov := parseCoverage(out)
+	if !cov.measured {
+		// A floor is configured and not one package ran a test. Reporting that
+		// as passing would hide the gap entirely.
 		return Result{
 			Gate: g.Name(), Status: StatusFailed, Duration: time.Since(started),
 			Detail: "no coverage was measured", Output: out,
 		}
 	}
 
-	if coverage < g.MinCoverage {
+	if cov.lowest < g.MinCoverage {
 		return Result{
 			Gate: g.Name(), Status: StatusFailed, Duration: time.Since(started),
 			Detail: fmt.Sprintf("coverage %.1f%% is below the %.1f%% floor",
-				coverage*100, g.MinCoverage*100),
+				cov.lowest*100, g.MinCoverage*100),
 			Output: out,
 		}
 	}
 
+	// Packages with no tests at all are named rather than counted, so the gap
+	// is visible without making the floor unsatisfiable. Same principle as a
+	// skipped optional gate: report what was not checked.
+	detail := fmt.Sprintf("coverage %.1f%%", cov.lowest*100)
+	if n := len(cov.untested); n > 0 {
+		detail += fmt.Sprintf("; %d package(s) have no tests: %s",
+			n, strings.Join(cov.untested, ", "))
+	}
+
 	return Result{
 		Gate: g.Name(), Status: StatusPassed, Duration: time.Since(started),
-		Detail: fmt.Sprintf("coverage %.1f%%", coverage*100),
+		Detail: detail,
 	}
 }
 
@@ -286,19 +295,46 @@ func (g GoSecurity) Run(ctx context.Context, dir string) Result {
 // coveragePattern matches the percentage in "coverage: 87.5% of statements".
 var coveragePattern = regexp.MustCompile(`coverage:\s+([0-9.]+)%\s+of statements`)
 
-// parseCoverage returns the lowest package coverage in a test run.
+// coverageResult is what one `go test -cover` run reported.
+type coverageResult struct {
+	// lowest is the smallest coverage among packages that actually ran tests.
+	lowest float64
+	// measured is false when no package ran a test at all.
+	measured bool
+	// untested names packages that have statements but no test file. These do
+	// not carry a coverage figure to compare against a floor — nothing ran —
+	// so they are reported separately rather than counted as 0%.
+	untested []string
+}
+
+// parseCoverage reads per-package coverage out of a test run.
 //
 // The minimum is used rather than an average because a floor is meant to
 // guarantee that no package falls below it; averaging lets a well-covered
 // package hide an untested one.
-func parseCoverage(output string) (float64, bool) {
-	matches := coveragePattern.FindAllStringSubmatch(output, -1)
-	if len(matches) == 0 {
-		return 0, false
-	}
-
+//
+// `go test -cover` writes two different lines that both contain a coverage
+// percentage, and conflating them makes the floor unsatisfiable. A package
+// that ran tests reports "ok <pkg> <time> coverage: N%". A package with
+// statements but no test file reports a bare "<pkg> coverage: 0.0%" — nothing
+// executed, so that 0% measures nothing. Treating the second as a real
+// reading means any module with an untested main package fails a coverage
+// floor forever, no matter how well tested the rest of it is.
+func parseCoverage(output string) coverageResult {
+	var result coverageResult
 	lowest := -1.0
-	for _, m := range matches {
+
+	for _, line := range strings.Split(output, "\n") {
+		m := coveragePattern.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+
+		if !strings.HasPrefix(strings.TrimSpace(line), "ok") {
+			result.untested = append(result.untested, packageName(line))
+			continue
+		}
+
 		value, err := strconv.ParseFloat(m[1], 64)
 		if err != nil {
 			continue
@@ -308,11 +344,23 @@ func parseCoverage(output string) (float64, bool) {
 		}
 	}
 
-	if lowest < 0 {
-		return 0, false
+	if lowest >= 0 {
+		result.lowest = lowest / 100
+		result.measured = true
 	}
 
-	return lowest / 100, true
+	return result
+}
+
+// packageName pulls the import path out of a `go test` result line, which
+// separates its columns with tabs.
+func packageName(line string) string {
+	for _, field := range strings.Split(strings.TrimSpace(line), "\t") {
+		if field = strings.TrimSpace(field); strings.Contains(field, "/") {
+			return field
+		}
+	}
+	return strings.TrimSpace(line)
 }
 
 func nonEmptyLines(s string) []string {

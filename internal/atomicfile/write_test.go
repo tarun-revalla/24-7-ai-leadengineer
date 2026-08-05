@@ -151,3 +151,71 @@ func TestConcurrentWritesLeaveCompleteContent(t *testing.T) {
 		t.Errorf("final contents truncated: %d bytes", len(got))
 	}
 }
+
+// The temp file must not survive a failure between its creation and the
+// rename, or a crashing system slowly fills its state directory with debris.
+func TestWriteCleansUpAfterAFailedRename(t *testing.T) {
+	dir := t.TempDir()
+
+	// A path whose final component is an existing directory cannot be renamed
+	// over, so the rename fails after the temp file is fully written.
+	target := filepath.Join(dir, "occupied")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatalf("failed to create the blocking directory: %v", err)
+	}
+
+	if err := Write(target, []byte("content"), 0o644); err == nil {
+		t.Fatal("writing over a directory should fail")
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".tmp-") {
+			t.Errorf("a temporary file was left behind: %s", e.Name())
+		}
+	}
+}
+
+func TestWriteHandlesEmptyContent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "empty.txt")
+
+	if err := Write(path, nil, 0o644); err != nil {
+		t.Fatalf("writing empty content should succeed: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if len(data) != 0 {
+		t.Errorf("got %d bytes, want an empty file", len(data))
+	}
+}
+
+// A file large enough to span several buffers must still arrive whole.
+func TestWriteHandlesLargeContent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "large.txt")
+	content := []byte(strings.Repeat("abcdefgh", 200_000))
+
+	if err := Write(path, content, 0o644); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if len(data) != len(content) {
+		t.Errorf("got %d bytes, want %d", len(data), len(content))
+	}
+}
+
+// syncDir deliberately swallows its errors: the file contents are already
+// durable by the time it runs, so a platform that will not sync a directory
+// must not turn a successful write into a failure.
+func TestSyncDirIgnoresAMissingDirectory(t *testing.T) {
+	syncDir(filepath.Join(t.TempDir(), "does-not-exist"))
+}

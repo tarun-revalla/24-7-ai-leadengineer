@@ -176,7 +176,7 @@ func TestGoTestFailsForUntestedPackage(t *testing.T) {
 // implicit pass.
 func TestGoTestFailsWhenCoverageUnmeasurable(t *testing.T) {
 	report := GoTest{MinCoverage: 0.8}
-	if _, ok := parseCoverage("ok  	fixture	0.01s\n"); ok {
+	if parseCoverage("ok  	fixture	0.01s\n").measured {
 		t.Fatal("test setup: this output should carry no coverage")
 	}
 	// The gate turns that condition into a failure; verified directly since
@@ -201,18 +201,55 @@ func TestParseCoverageTakesTheLowest(t *testing.T) {
 ok  	example/b	0.01s	coverage: 42.5% of statements
 ok  	example/c	0.01s	coverage: 88.0% of statements`
 
-	got, ok := parseCoverage(output)
-	if !ok {
+	got := parseCoverage(output)
+	if !got.measured {
 		t.Fatal("coverage should have been parsed")
 	}
-	if got < 0.424 || got > 0.426 {
-		t.Errorf("got %.3f, want the lowest package coverage 0.425", got)
+	if got.lowest < 0.424 || got.lowest > 0.426 {
+		t.Errorf("got %.3f, want the lowest package coverage 0.425", got.lowest)
 	}
 }
 
 func TestParseCoverageWithNoMeasurement(t *testing.T) {
-	if _, ok := parseCoverage("ok  	example/a	0.01s\n"); ok {
+	if parseCoverage("ok  	example/a	0.01s\n").measured {
 		t.Error("output without a coverage line should report none")
+	}
+}
+
+// `go test -cover` reports "coverage: 0.0%" for a package that has statements
+// but no test file — nothing ran, so that 0% measures nothing. Counting it as
+// a real reading makes a coverage floor unsatisfiable for any module with an
+// untested main package, however well tested the rest of it is.
+func TestParseCoverageIgnoresPackagesThatRanNoTests(t *testing.T) {
+	output := "\texample/cmd/app\t\tcoverage: 0.0% of statements\n" +
+		"ok  \texample/internal/a\t0.01s\tcoverage: 91.0% of statements\n" +
+		"?   \texample/pkg/types\t[no test files]\n"
+
+	got := parseCoverage(output)
+	if !got.measured {
+		t.Fatal("the tested package should have been measured")
+	}
+	if got.lowest < 0.909 || got.lowest > 0.911 {
+		t.Errorf("got %.3f, want 0.910; the untested package must not drag the floor to zero", got.lowest)
+	}
+	if len(got.untested) != 1 || got.untested[0] != "example/cmd/app" {
+		t.Errorf("the untested package should be named, got %v", got.untested)
+	}
+}
+
+// Not counting them must not mean hiding them.
+func TestUntestedPackagesAreNamedInTheResult(t *testing.T) {
+	dir := fixture(t, map[string]string{
+		"add.go":      goodSource,
+		"add_test.go": goodTest,
+	})
+
+	res := GoTest{MinCoverage: 0.5}.Run(context.Background(), dir)
+	if res.Status != StatusPassed {
+		t.Fatalf("got %s (%s), want passed", res.Status, res.Detail)
+	}
+	if !strings.Contains(res.Detail, "coverage") {
+		t.Errorf("the detail should report the measured coverage: %q", res.Detail)
 	}
 }
 
